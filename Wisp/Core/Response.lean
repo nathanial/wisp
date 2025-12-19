@@ -49,9 +49,15 @@ def isError (r : Response) : Bool :=
 def bodyText (r : Response) : Option String :=
   String.fromUTF8? r.body
 
-/-- Get body as UTF-8 string, replacing invalid sequences -/
+/-- Get body as UTF-8 string, replacing invalid sequences with replacement character -/
 def bodyTextLossy (r : Response) : String :=
-  String.fromUTF8! r.body
+  match String.fromUTF8? r.body with
+  | some s => s
+  | none =>
+    -- Fall back to byte-by-byte conversion, replacing non-ASCII with replacement char
+    let chars := r.body.toList.map fun b =>
+      if b < 128 then Char.ofNat b.toNat else '�'
+    String.mk chars
 
 /-- Get header value by name (case-insensitive) -/
 def header (r : Response) (name : String) : Option String :=
