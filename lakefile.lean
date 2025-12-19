@@ -56,6 +56,14 @@ lean_exe post_json where
   root := `examples.PostJSON
   moreLinkArgs := curlLinkArgs
 
+lean_exe minimal_test where
+  root := `examples.MinimalTest
+  moreLinkArgs := curlLinkArgs
+
+lean_exe client_test where
+  root := `examples.ClientTest
+  moreLinkArgs := curlLinkArgs
+
 -- FFI: Build C code
 target wisp_ffi_o pkg : FilePath := do
   let oFile := pkg.buildDir / "native" / "wisp_ffi.o"
