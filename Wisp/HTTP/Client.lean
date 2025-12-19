@@ -103,16 +103,21 @@ def execute (client : Client) (req : Wisp.Request) : IO (Wisp.WispResult Wisp.Re
     Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.URL req.url
 
     -- Set method
+    let customMethod : Option String :=
+      match req.method with
+      | .PUT => some "PUT"
+      | .DELETE => some "DELETE"
+      | .PATCH => some "PATCH"
+      | .OPTIONS => some "OPTIONS"
+      | .TRACE => some "TRACE"
+      | .CONNECT => some "CONNECT"
+      | _ => none
+
     match req.method with
     | .GET => Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.HTTPGET 1
     | .POST => Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POST 1
     | .HEAD => Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.NOBODY 1
-    | .PUT => Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.CUSTOMREQUEST "PUT"
-    | .DELETE => Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.CUSTOMREQUEST "DELETE"
-    | .PATCH => Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.CUSTOMREQUEST "PATCH"
-    | .OPTIONS => Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.CUSTOMREQUEST "OPTIONS"
-    | .TRACE => Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.CUSTOMREQUEST "TRACE"
-    | .CONNECT => Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.CUSTOMREQUEST "CONNECT"
+    | _ => pure ()
 
     -- Build headers slist
     let slist ← Wisp.FFI.slistNew
@@ -153,9 +158,6 @@ def execute (client : Client) (req : Wisp.Request) : IO (Wisp.WispResult Wisp.Re
           Wisp.FFI.mimepartType mimepart ct
       Wisp.FFI.setoptMime easy mime
 
-    -- Apply headers
-    Wisp.FFI.setoptSlist easy Wisp.FFI.CurlOpt.HTTPHEADER slist
-
     -- Set authentication
     match req.auth with
     | .none => pure ()
@@ -167,6 +169,13 @@ def execute (client : Client) (req : Wisp.Request) : IO (Wisp.WispResult Wisp.Re
     | .digest username password =>
       Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.USERPWD s!"{username}:{password}"
       Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.HTTPAUTH Wisp.FFI.CurlOpt.AUTH_DIGEST
+
+    -- Re-apply custom method after setting body/options that may override it
+    if let some method := customMethod then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.CUSTOMREQUEST method
+
+    -- Apply headers
+    Wisp.FFI.setoptSlist easy Wisp.FFI.CurlOpt.HTTPHEADER slist
 
     -- Set timeouts
     let timeout := if req.timeoutMs > 0 then req.timeoutMs else client.defaultTimeout
