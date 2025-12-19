@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdint.h>
 
 // ============================================================================
 // External Class Registration
@@ -406,6 +407,22 @@ LEAN_EXPORT lean_obj_res wisp_easy_setopt_string(
     }
 
     easy_store_string(wrapper, str_copy);
+    return lean_io_result_mk_ok(lean_box(0));
+}
+
+LEAN_EXPORT lean_obj_res wisp_easy_setopt_private(
+    b_lean_obj_arg easy,
+    uint64_t value,
+    lean_obj_arg world
+) {
+    EasyWrapper* wrapper = (EasyWrapper*)lean_get_external_data(easy);
+    void* ptr = (void*)(uintptr_t)value;
+
+    CURLcode res = curl_easy_setopt(wrapper->handle, CURLOPT_PRIVATE, ptr);
+    if (res != CURLE_OK) {
+        return mk_curl_error(res);
+    }
+
     return lean_io_result_mk_ok(lean_box(0));
 }
 
@@ -853,6 +870,35 @@ LEAN_EXPORT lean_obj_res wisp_multi_poll(
     }
 
     return lean_io_result_mk_ok(lean_box_uint32((uint32_t)numfds));
+}
+
+LEAN_EXPORT lean_obj_res wisp_multi_info_read(b_lean_obj_arg multi, lean_obj_arg world) {
+    MultiWrapper* wrapper = (MultiWrapper*)lean_get_external_data(multi);
+    int msgs_in_queue = 0;
+
+    while (1) {
+        CURLMsg* msg = curl_multi_info_read(wrapper->handle, &msgs_in_queue);
+        if (!msg) {
+            return lean_io_result_mk_ok(lean_box(0));
+        }
+        if (msg->msg != CURLMSG_DONE) {
+            continue;
+        }
+
+        void* private_ptr = NULL;
+        curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &private_ptr);
+        uint64_t id = (uint64_t)(uintptr_t)private_ptr;
+        uint32_t code = (uint32_t)msg->data.result;
+
+        lean_object* pair = lean_alloc_ctor(0, 2, 0);
+        lean_ctor_set(pair, 0, lean_box_uint64(id));
+        lean_ctor_set(pair, 1, lean_box_uint32(code));
+
+        lean_object* some = lean_alloc_ctor(1, 1, 0);
+        lean_ctor_set(some, 0, pair);
+
+        return lean_io_result_mk_ok(some);
+    }
 }
 
 // ============================================================================

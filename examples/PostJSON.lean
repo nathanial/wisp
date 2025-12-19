@@ -34,7 +34,8 @@ def main : IO Unit := do
     |>.withJson payload
     |>.withHeader "X-Request-Id" "12345"
 
-  let result ← client.execute req
+  let task ← client.execute req
+  let result := task.get
 
   match result with
   | .ok response =>
@@ -52,3 +53,4 @@ def main : IO Unit := do
     IO.println s!"Error: {e}"
 
   Wisp.FFI.globalCleanup
+  Wisp.HTTP.Client.shutdown

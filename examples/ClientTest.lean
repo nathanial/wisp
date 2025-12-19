@@ -23,7 +23,8 @@ def main : IO Unit := do
   IO.println "  Request created"
 
   IO.println "Step 4: Executing request..."
-  let result ← client.execute req
+  let task ← client.execute req
+  let result := task.get
   IO.println "  Execution complete"
 
   match result with
@@ -37,6 +38,7 @@ def main : IO Unit := do
   IO.println ""
   IO.println "Step 5: Cleanup..."
   Wisp.FFI.globalCleanup
+  Wisp.HTTP.Client.shutdown
   IO.println "  OK"
 
   IO.println ""

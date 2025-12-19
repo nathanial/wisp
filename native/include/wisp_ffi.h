@@ -19,6 +19,7 @@ LEAN_EXPORT lean_obj_res wisp_easy_init(lean_obj_arg world);
 LEAN_EXPORT lean_obj_res wisp_easy_cleanup(b_lean_obj_arg easy, lean_obj_arg world);
 LEAN_EXPORT lean_obj_res wisp_easy_reset(b_lean_obj_arg easy, lean_obj_arg world);
 LEAN_EXPORT lean_obj_res wisp_easy_perform(b_lean_obj_arg easy, lean_obj_arg world);
+LEAN_EXPORT lean_obj_res wisp_easy_setopt_private(b_lean_obj_arg easy, uint64_t value, lean_obj_arg world);
 
 // Setopt operations
 LEAN_EXPORT lean_obj_res wisp_easy_setopt_string(b_lean_obj_arg easy, uint32_t option, b_lean_obj_arg value, lean_obj_arg world);
@@ -60,6 +61,7 @@ LEAN_EXPORT lean_obj_res wisp_multi_add_handle(b_lean_obj_arg multi, b_lean_obj_
 LEAN_EXPORT lean_obj_res wisp_multi_remove_handle(b_lean_obj_arg multi, b_lean_obj_arg easy, lean_obj_arg world);
 LEAN_EXPORT lean_obj_res wisp_multi_perform(b_lean_obj_arg multi, lean_obj_arg world);
 LEAN_EXPORT lean_obj_res wisp_multi_poll(b_lean_obj_arg multi, uint32_t timeout_ms, lean_obj_arg world);
+LEAN_EXPORT lean_obj_res wisp_multi_info_read(b_lean_obj_arg multi, lean_obj_arg world);
 
 // URL encoding
 LEAN_EXPORT lean_obj_res wisp_url_encode(b_lean_obj_arg easy, b_lean_obj_arg str, lean_obj_arg world);

@@ -178,6 +178,10 @@ opaque setoptString (easy : @& Easy) (option : UInt32) (value : @& String) : IO 
 @[extern "wisp_easy_setopt_long"]
 opaque setoptLong (easy : @& Easy) (option : UInt32) (value : Int64) : IO Unit
 
+/-- Set a private pointer value (CURLOPT_PRIVATE). -/
+@[extern "wisp_easy_setopt_private"]
+opaque setoptPrivate (easy : @& Easy) (value : UInt64) : IO Unit
+
 /-- Set an slist (header list) option. -/
 @[extern "wisp_easy_setopt_slist"]
 opaque setoptSlist (easy : @& Easy) (option : UInt32) (slist : @& Slist) : IO Unit

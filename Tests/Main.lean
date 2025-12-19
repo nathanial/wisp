@@ -33,6 +33,10 @@ def runTest (name : String) (test : IO Bool) (stats : TestStats) : IO TestStats 
     IO.println s!"[FAIL] Exception: {e}"
     return stats.fail
 
+def awaitTask (task : IO (Task α)) : IO α := do
+  let t ← task
+  return t.get
+
 def main : IO UInt32 := do
   IO.println "Wisp Library Tests - Comprehensive Suite"
   IO.println "========================================="
@@ -64,35 +68,35 @@ def main : IO UInt32 := do
   IO.println "---------------"
 
   stats ← runTest "GET request" (do
-    let result ← client.get "https://httpbin.org/get"
+    let result ← awaitTask (client.get "https://httpbin.org/get")
     match result with
     | .ok r => return r.status == 200
     | .error _ => return false
   ) stats
 
   stats ← runTest "POST request" (do
-    let result ← client.postJson "https://httpbin.org/post" "{\"test\": 1}"
+    let result ← awaitTask (client.postJson "https://httpbin.org/post" "{\"test\": 1}")
     match result with
     | .ok r => return r.status == 200
     | .error _ => return false
   ) stats
 
   stats ← runTest "PUT request" (do
-    let result ← client.putJson "https://httpbin.org/put" "{\"update\": true}"
+    let result ← awaitTask (client.putJson "https://httpbin.org/put" "{\"update\": true}")
     match result with
     | .ok r => return r.status == 200
     | .error _ => return false
   ) stats
 
   stats ← runTest "DELETE request" (do
-    let result ← client.delete "https://httpbin.org/delete"
+    let result ← awaitTask (client.delete "https://httpbin.org/delete")
     match result with
     | .ok r => return r.status == 200
     | .error _ => return false
   ) stats
 
   stats ← runTest "HEAD request" (do
-    let result ← client.head "https://httpbin.org/get"
+    let result ← awaitTask (client.head "https://httpbin.org/get")
     match result with
     | .ok r => return r.status == 200 && r.body.isEmpty
     | .error _ => return false
@@ -100,7 +104,7 @@ def main : IO UInt32 := do
 
   stats ← runTest "PATCH request" (do
     let req := Wisp.Request.patch "https://httpbin.org/patch" |>.withJson "{\"patch\": true}"
-    let result ← client.execute req
+    let result ← awaitTask (client.execute req)
     match result with
     | .ok r => return r.status == 200
     | .error _ => return false
@@ -108,7 +112,7 @@ def main : IO UInt32 := do
 
   stats ← runTest "OPTIONS request" (do
     let req := Wisp.Request.options "https://httpbin.org/get"
-    let result ← client.execute req
+    let result ← awaitTask (client.execute req)
     match result with
     | .ok r => return r.status == 200
     | .error _ => return false
@@ -123,7 +127,7 @@ def main : IO UInt32 := do
   IO.println "---------------------"
 
   stats ← runTest "JSON body" (do
-    let result ← client.postJson "https://httpbin.org/post" "{\"key\": \"value\"}"
+    let result ← awaitTask (client.postJson "https://httpbin.org/post" "{\"key\": \"value\"}")
     match result with
     | .ok r =>
       let body := r.bodyTextLossy
@@ -132,7 +136,7 @@ def main : IO UInt32 := do
   ) stats
 
   stats ← runTest "Form-encoded body" (do
-    let result ← client.postForm "https://httpbin.org/post" #[("field1", "value1"), ("field2", "value2")]
+    let result ← awaitTask (client.postForm "https://httpbin.org/post" #[("field1", "value1"), ("field2", "value2")])
     match result with
     | .ok r =>
       let body := r.bodyTextLossy
@@ -142,7 +146,7 @@ def main : IO UInt32 := do
 
   stats ← runTest "Plain text body" (do
     let req := Wisp.Request.post "https://httpbin.org/post" |>.withText "Hello, World!"
-    let result ← client.execute req
+    let result ← awaitTask (client.execute req)
     match result with
     | .ok r =>
       let body := r.bodyTextLossy
@@ -153,7 +157,7 @@ def main : IO UInt32 := do
   stats ← runTest "Raw bytes body" (do
     let bytes := "raw data".toUTF8
     let req := Wisp.Request.post "https://httpbin.org/post" |>.withBody bytes "application/octet-stream"
-    let result ← client.execute req
+    let result ← awaitTask (client.execute req)
     match result with
     | .ok r => return r.status == 200
     | .error _ => return false
@@ -171,7 +175,7 @@ def main : IO UInt32 := do
     let req := Wisp.Request.get "https://httpbin.org/headers"
       |>.withHeader "X-Test-Header" "test-value-123"
       |>.withHeader "X-Another" "another-value"
-    let result ← client.execute req
+    let result ← awaitTask (client.execute req)
     match result with
     | .ok r =>
       let body := r.bodyTextLossy
@@ -180,7 +184,7 @@ def main : IO UInt32 := do
   ) stats
 
   stats ← runTest "Response headers parsed" (do
-    let result ← client.get "https://httpbin.org/response-headers?X-Custom-Response=hello"
+    let result ← awaitTask (client.get "https://httpbin.org/response-headers?X-Custom-Response=hello")
     match result with
     | .ok r =>
       let hasHeader := r.headers.get? "X-Custom-Response"
@@ -189,7 +193,7 @@ def main : IO UInt32 := do
   ) stats
 
   stats ← runTest "Content-Type header" (do
-    let result ← client.get "https://httpbin.org/json"
+    let result ← awaitTask (client.get "https://httpbin.org/json")
     match result with
     | .ok r => return r.contentType.isSome && (r.contentType.getD "").containsSubstr "json"
     | .error _ => return false
@@ -206,7 +210,7 @@ def main : IO UInt32 := do
   stats ← runTest "Basic auth (valid)" (do
     let req := Wisp.Request.get "https://httpbin.org/basic-auth/testuser/testpass"
       |>.withBasicAuth "testuser" "testpass"
-    let result ← client.execute req
+    let result ← awaitTask (client.execute req)
     match result with
     | .ok r => return r.status == 200
     | .error _ => return false
@@ -215,7 +219,7 @@ def main : IO UInt32 := do
   stats ← runTest "Basic auth (invalid)" (do
     let req := Wisp.Request.get "https://httpbin.org/basic-auth/testuser/testpass"
       |>.withBasicAuth "wrong" "credentials"
-    let result ← client.execute req
+    let result ← awaitTask (client.execute req)
     match result with
     | .ok r => return r.status == 401
     | .error _ => return false
@@ -224,7 +228,7 @@ def main : IO UInt32 := do
   stats ← runTest "Bearer token" (do
     let req := Wisp.Request.get "https://httpbin.org/bearer"
       |>.withBearerToken "my-secret-token"
-    let result ← client.execute req
+    let result ← awaitTask (client.execute req)
     match result with
     | .ok r =>
       let body := r.bodyTextLossy
@@ -241,7 +245,7 @@ def main : IO UInt32 := do
   IO.println "------------"
 
   stats ← runTest "Follow redirects (default)" (do
-    let result ← client.get "https://httpbin.org/redirect/2"
+    let result ← awaitTask (client.get "https://httpbin.org/redirect/2")
     match result with
     | .ok r =>
       -- Should end at /get after 2 redirects
@@ -252,14 +256,14 @@ def main : IO UInt32 := do
   stats ← runTest "Don't follow redirects" (do
     let req := Wisp.Request.get "https://httpbin.org/redirect/1"
       |>.withFollowRedirects false
-    let result ← client.execute req
+    let result ← awaitTask (client.execute req)
     match result with
     | .ok r => return r.status == 302
     | .error _ => return false
   ) stats
 
   stats ← runTest "Absolute redirect" (do
-    let result ← client.get "https://httpbin.org/absolute-redirect/1"
+    let result ← awaitTask (client.get "https://httpbin.org/absolute-redirect/1")
     match result with
     | .ok r => return r.status == 200
     | .error _ => return false
@@ -276,7 +280,7 @@ def main : IO UInt32 := do
   stats ← runTest "Request completes within timeout" (do
     let req := Wisp.Request.get "https://httpbin.org/delay/1"
       |>.withTimeout 5000  -- 5 second timeout, 1 second delay
-    let result ← client.execute req
+    let result ← awaitTask (client.execute req)
     match result with
     | .ok r => return r.status == 200
     | .error _ => return false
@@ -285,7 +289,7 @@ def main : IO UInt32 := do
   stats ← runTest "Request times out" (do
     let req := Wisp.Request.get "https://httpbin.org/delay/10"
       |>.withTimeout 1000  -- 1 second timeout, 10 second delay
-    let result ← client.execute req
+    let result ← awaitTask (client.execute req)
     match result with
     | .ok _ => return false  -- Should have timed out
     | .error e => return e.toString.containsSubstr "timeout" || e.toString.containsSubstr "Timeout" || true  -- Any error is acceptable for timeout
@@ -300,70 +304,70 @@ def main : IO UInt32 := do
   IO.println "--------------------"
 
   stats ← runTest "200 OK" (do
-    let result ← client.get "https://httpbin.org/status/200"
+    let result ← awaitTask (client.get "https://httpbin.org/status/200")
     match result with
     | .ok r => return r.status == 200 && r.isSuccess
     | .error _ => return false
   ) stats
 
   stats ← runTest "201 Created" (do
-    let result ← client.get "https://httpbin.org/status/201"
+    let result ← awaitTask (client.get "https://httpbin.org/status/201")
     match result with
     | .ok r => return r.status == 201 && r.isSuccess
     | .error _ => return false
   ) stats
 
   stats ← runTest "204 No Content" (do
-    let result ← client.get "https://httpbin.org/status/204"
+    let result ← awaitTask (client.get "https://httpbin.org/status/204")
     match result with
     | .ok r => return r.status == 204 && r.isSuccess
     | .error _ => return false
   ) stats
 
   stats ← runTest "400 Bad Request" (do
-    let result ← client.get "https://httpbin.org/status/400"
+    let result ← awaitTask (client.get "https://httpbin.org/status/400")
     match result with
     | .ok r => return r.status == 400 && r.isClientError
     | .error _ => return false
   ) stats
 
   stats ← runTest "401 Unauthorized" (do
-    let result ← client.get "https://httpbin.org/status/401"
+    let result ← awaitTask (client.get "https://httpbin.org/status/401")
     match result with
     | .ok r => return r.status == 401 && r.isClientError
     | .error _ => return false
   ) stats
 
   stats ← runTest "403 Forbidden" (do
-    let result ← client.get "https://httpbin.org/status/403"
+    let result ← awaitTask (client.get "https://httpbin.org/status/403")
     match result with
     | .ok r => return r.status == 403 && r.isClientError
     | .error _ => return false
   ) stats
 
   stats ← runTest "404 Not Found" (do
-    let result ← client.get "https://httpbin.org/status/404"
+    let result ← awaitTask (client.get "https://httpbin.org/status/404")
     match result with
     | .ok r => return r.status == 404 && r.isClientError
     | .error _ => return false
   ) stats
 
   stats ← runTest "500 Internal Server Error" (do
-    let result ← client.get "https://httpbin.org/status/500"
+    let result ← awaitTask (client.get "https://httpbin.org/status/500")
     match result with
     | .ok r => return r.status == 500 && r.isServerError
     | .error _ => return false
   ) stats
 
   stats ← runTest "502 Bad Gateway" (do
-    let result ← client.get "https://httpbin.org/status/502"
+    let result ← awaitTask (client.get "https://httpbin.org/status/502")
     match result with
     | .ok r => return r.status == 502 && r.isServerError
     | .error _ => return false
   ) stats
 
   stats ← runTest "503 Service Unavailable" (do
-    let result ← client.get "https://httpbin.org/status/503"
+    let result ← awaitTask (client.get "https://httpbin.org/status/503")
     match result with
     | .ok r => return r.status == 503 && r.isServerError
     | .error _ => return false
@@ -378,7 +382,7 @@ def main : IO UInt32 := do
   IO.println "------------------------"
 
   stats ← runTest "Body as text (valid UTF-8)" (do
-    let result ← client.get "https://httpbin.org/encoding/utf8"
+    let result ← awaitTask (client.get "https://httpbin.org/encoding/utf8")
     match result with
     | .ok r =>
       match r.bodyText with
@@ -388,7 +392,7 @@ def main : IO UInt32 := do
   ) stats
 
   stats ← runTest "Body as lossy text" (do
-    let result ← client.get "https://httpbin.org/bytes/100"
+    let result ← awaitTask (client.get "https://httpbin.org/bytes/100")
     match result with
     | .ok r =>
       let text := r.bodyTextLossy
@@ -397,7 +401,7 @@ def main : IO UInt32 := do
   ) stats
 
   stats ← runTest "Body size tracking" (do
-    let result ← client.get "https://httpbin.org/bytes/256"
+    let result ← awaitTask (client.get "https://httpbin.org/bytes/256")
     match result with
     | .ok r => return r.body.size == 256
     | .error _ => return false
@@ -414,7 +418,7 @@ def main : IO UInt32 := do
   stats ← runTest "Custom user agent" (do
     let req := Wisp.Request.get "https://httpbin.org/user-agent"
       |>.withUserAgent "CustomAgent/1.0"
-    let result ← client.execute req
+    let result ← awaitTask (client.execute req)
     match result with
     | .ok r =>
       let body := r.bodyTextLossy
@@ -423,7 +427,7 @@ def main : IO UInt32 := do
   ) stats
 
   stats ← runTest "Gzip encoding" (do
-    let result ← client.get "https://httpbin.org/gzip"
+    let result ← awaitTask (client.get "https://httpbin.org/gzip")
     match result with
     | .ok r =>
       let body := r.bodyTextLossy
@@ -432,7 +436,7 @@ def main : IO UInt32 := do
   ) stats
 
   stats ← runTest "Deflate encoding" (do
-    let result ← client.get "https://httpbin.org/deflate"
+    let result ← awaitTask (client.get "https://httpbin.org/deflate")
     match result with
     | .ok r =>
       let body := r.bodyTextLossy
@@ -449,14 +453,14 @@ def main : IO UInt32 := do
   IO.println "---------------------"
 
   stats ← runTest "Total time tracked" (do
-    let result ← client.get "https://httpbin.org/delay/1"
+    let result ← awaitTask (client.get "https://httpbin.org/delay/1")
     match result with
     | .ok r => return r.totalTime >= 1.0
     | .error _ => return false
   ) stats
 
   stats ← runTest "Effective URL tracked" (do
-    let result ← client.get "https://httpbin.org/redirect/1"
+    let result ← awaitTask (client.get "https://httpbin.org/redirect/1")
     match result with
     | .ok r => return r.effectiveUrl.containsSubstr "httpbin.org"
     | .error _ => return false
@@ -472,6 +476,7 @@ def main : IO UInt32 := do
 
   -- Cleanup
   Wisp.FFI.globalCleanup
+  Wisp.HTTP.Client.shutdown
 
   if stats.failed > 0 then
     IO.println "\nSome tests failed!"

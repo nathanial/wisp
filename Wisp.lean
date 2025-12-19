@@ -9,7 +9,8 @@
   Basic usage:
   ```
   let client := Wisp.HTTP.Client.new
-  let response ← client.get "https://example.com"
+  let task ← client.get "https://example.com"
+  let response := task.get
   ```
 -/
 

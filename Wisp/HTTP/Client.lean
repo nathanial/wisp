@@ -8,6 +8,10 @@ import Wisp.Core.Error
 import Wisp.Core.Request
 import Wisp.Core.Response
 import Wisp.FFI.Easy
+import Wisp.FFI.Multi
+import Std.Data.HashMap
+import Std.Sync.Channel
+import Std.Sync.Mutex
 
 namespace Wisp.HTTP
 
@@ -31,6 +35,12 @@ namespace Client
 
 /-- Create a new HTTP client with default settings -/
 def new : Client := {}
+
+private instance : Inhabited Wisp.WispError :=
+  ⟨.ioError "uninitialized"⟩
+
+private instance : Inhabited (Wisp.WispResult Wisp.Response) :=
+  ⟨.error default⟩
 
 /-- Set custom user agent -/
 def withUserAgent (c : Client) (ua : String) : Client :=
@@ -89,8 +99,157 @@ private def buildFormBody (easy : Wisp.FFI.Easy) (fields : Array (String × Stri
     parts := parts.push s!"{encodedKey}={encodedValue}"
   return "&".intercalate parts.toList
 
-/-- Execute a request and return a response -/
-def execute (client : Client) (req : Wisp.Request) : IO (Wisp.WispResult Wisp.Response) := do
+-- ============================================================================
+-- Async Manager (curl_multi)
+-- ============================================================================
+
+private structure Pending where
+  easy : Wisp.FFI.Easy
+  promise : IO.Promise (Wisp.WispResult Wisp.Response)
+
+private inductive Command where
+  | add (id : UInt64) (pending : Pending)
+
+private def curlErrorFromCode (code : UInt32) : Wisp.WispError :=
+  match Wisp.CurlCode.fromNat code.toNat with
+  | .operationTimedout => .timeoutError "Operation timed out"
+  | .couldntConnect => .connectionError "Couldn't connect"
+  | .sslConnectError => .sslError "SSL connect error"
+  | .peerFailedVerification => .sslError "Peer failed verification"
+  | .sslCertProblem => .sslError "SSL certificate problem"
+  | .sslInvalidcertstatus => .sslError "SSL invalid certificate status"
+  | other => .curlError s!"{other}"
+
+private def readResponse (easy : Wisp.FFI.Easy) : IO Wisp.Response := do
+  let body ← Wisp.FFI.getResponseBody easy
+  let rawHeaders ← Wisp.FFI.getResponseHeaders easy
+  let status ← Wisp.FFI.getinfoLong easy Wisp.FFI.CurlInfo.RESPONSE_CODE
+  let totalTime ← Wisp.FFI.getinfoDouble easy Wisp.FFI.CurlInfo.TOTAL_TIME
+  let effectiveUrl ← Wisp.FFI.getinfoString easy Wisp.FFI.CurlInfo.EFFECTIVE_URL
+
+  let headers := parseHeaders rawHeaders
+  let contentType := headers.get? "Content-Type"
+
+  return {
+    status := status.toUInt32
+    headers := headers
+    body := body
+    contentType := contentType
+    totalTime := totalTime
+    effectiveUrl := effectiveUrl
+  }
+
+private def handleCompletion
+    (multi : Wisp.FFI.Multi)
+    (pending : Std.HashMap UInt64 Pending) : IO (Std.HashMap UInt64 Pending) := do
+  let mut pending := pending
+  let mut msg ← Wisp.FFI.multiInfoRead multi
+  while msg.isSome do
+    match msg with
+    | some (id, code) =>
+      if let some p := pending.get? id then
+        try
+          if code == 0 then
+            let resp ← readResponse p.easy
+            p.promise.resolve (.ok resp)
+          else
+            p.promise.resolve (.error (curlErrorFromCode code))
+        catch e =>
+          p.promise.resolve (.error (.ioError (toString e)))
+        Wisp.FFI.multiRemoveHandle multi p.easy
+        pending := pending.erase id
+    | none => pure ()
+    msg ← Wisp.FFI.multiInfoRead multi
+  return pending
+
+private def handleCommand
+    (multi : Wisp.FFI.Multi)
+    (pending : Std.HashMap UInt64 Pending)
+    (cmd : Command) : IO (Std.HashMap UInt64 Pending) := do
+  match cmd with
+  | .add id p =>
+    Wisp.FFI.multiAddHandle multi p.easy
+    return pending.insert id p
+
+private def drainCommands
+    (multi : Wisp.FFI.Multi)
+    (pending : Std.HashMap UInt64 Pending)
+    (chan : Std.CloseableChannel.Sync Command) : IO (Std.HashMap UInt64 Pending) := do
+  let mut pending := pending
+  let mut cmd? ← chan.tryRecv
+  while cmd?.isSome do
+    match cmd? with
+    | some cmd =>
+      pending ← handleCommand multi pending cmd
+    | none => pure ()
+    cmd? ← chan.tryRecv
+  return pending
+
+private partial def managerLoop (chan : Std.CloseableChannel.Sync Command) : IO Unit := do
+  let multi ← Wisp.FFI.multiInit
+
+  let rec loop (pending : Std.HashMap UInt64 Pending) : IO Unit := do
+    if pending.isEmpty then
+      let cmd? ← chan.recv
+      match cmd? with
+      | none => return ()
+      | some cmd =>
+        let pending ← handleCommand multi pending cmd
+        loop pending
+    else
+      let pending ← drainCommands multi pending chan
+      let _ ← Wisp.FFI.multiPerform multi
+      let _ ← Wisp.FFI.multiPoll multi 100
+      let pending ← handleCompletion multi pending
+      loop pending
+
+  loop {}
+
+private structure Manager where
+  chan : Std.CloseableChannel.Sync Command
+  nextId : Std.Mutex UInt64
+  worker : Task (Except IO.Error Unit)
+
+private def startManager : IO Manager := do
+  let chan ← Std.CloseableChannel.Sync.new
+  let nextId ← Std.Mutex.new 1
+  let worker ← (managerLoop chan).asTask Task.Priority.dedicated
+  return { chan, nextId, worker }
+
+initialize managerRef : IO.Ref (Option Manager) ← IO.mkRef none
+initialize managerMutex : Std.Mutex Unit ← Std.Mutex.new ()
+
+private def getManager : IO Manager := do
+  managerMutex.atomically do
+    let current ← managerRef.get
+    match current with
+    | some m => return m
+    | none =>
+      let m ← startManager
+      managerRef.set (some m)
+      return m
+
+/-- Shutdown the async manager and stop background polling. -/
+def shutdown : IO Unit := do
+  let manager? ← managerMutex.atomically do
+    let current ← managerRef.get
+    match current with
+    | none => return none
+    | some m =>
+      managerRef.set none
+      return some m
+  match manager? with
+  | none => pure ()
+  | some m =>
+    try
+      let _ ← Std.CloseableChannel.Sync.close m.chan
+      let _ := m.worker.get
+      pure ()
+    catch _ =>
+      pure ()
+
+/-- Execute a request asynchronously and return a task for the response. -/
+def execute (client : Client) (req : Wisp.Request) : IO (Task (Wisp.WispResult Wisp.Response)) := do
   try
     -- Initialize easy handle
     let easy ← Wisp.FFI.easyInit
@@ -208,54 +367,51 @@ def execute (client : Client) (req : Wisp.Request) : IO (Wisp.WispResult Wisp.Re
     if req.verbose then
       Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.VERBOSE 1
 
-    -- Perform the request
-    Wisp.FFI.easyPerform easy
+    -- Enqueue on async manager
+    let manager ← getManager
+    let id ← manager.nextId.atomically do
+      let current ← get
+      set (current + 1)
+      return current
+    Wisp.FFI.setoptPrivate easy id
 
-    -- Get response data
-    let body ← Wisp.FFI.getResponseBody easy
-    let rawHeaders ← Wisp.FFI.getResponseHeaders easy
-    let status ← Wisp.FFI.getinfoLong easy Wisp.FFI.CurlInfo.RESPONSE_CODE
-    let totalTime ← Wisp.FFI.getinfoDouble easy Wisp.FFI.CurlInfo.TOTAL_TIME
-    let effectiveUrl ← Wisp.FFI.getinfoString easy Wisp.FFI.CurlInfo.EFFECTIVE_URL
+    let promise ← IO.Promise.new
+    let pending : Pending := { easy, promise }
+    let _ ← Std.CloseableChannel.Sync.send manager.chan (.add id pending)
 
-    -- Parse headers
-    let headers := parseHeaders rawHeaders
-    let contentType := headers.get? "Content-Type"
-
-    return .ok {
-      status := status.toUInt32
-      headers := headers
-      body := body
-      contentType := contentType
-      totalTime := totalTime
-      effectiveUrl := effectiveUrl
-    }
-
+    return promise.result!
   catch e =>
-    return .error (.ioError (toString e))
+    let promise ← IO.Promise.new
+    promise.resolve (.error (.ioError (toString e)))
+    return promise.result!
+
+/-- Execute a request synchronously by awaiting the task. -/
+def executeSync (client : Client) (req : Wisp.Request) : IO (Wisp.WispResult Wisp.Response) := do
+  let task ← client.execute req
+  return task.get
 
 /-- Simple GET request -/
-def get (client : Client) (url : String) : IO (Wisp.WispResult Wisp.Response) :=
+def get (client : Client) (url : String) : IO (Task (Wisp.WispResult Wisp.Response)) :=
   client.execute (Wisp.Request.get url)
 
 /-- Simple POST request with JSON body -/
-def postJson (client : Client) (url : String) (json : String) : IO (Wisp.WispResult Wisp.Response) :=
+def postJson (client : Client) (url : String) (json : String) : IO (Task (Wisp.WispResult Wisp.Response)) :=
   client.execute (Wisp.Request.post url |>.withJson json)
 
 /-- Simple POST request with form data -/
-def postForm (client : Client) (url : String) (fields : Array (String × String)) : IO (Wisp.WispResult Wisp.Response) :=
+def postForm (client : Client) (url : String) (fields : Array (String × String)) : IO (Task (Wisp.WispResult Wisp.Response)) :=
   client.execute (Wisp.Request.post url |>.withForm fields)
 
 /-- Simple PUT request with JSON body -/
-def putJson (client : Client) (url : String) (json : String) : IO (Wisp.WispResult Wisp.Response) :=
+def putJson (client : Client) (url : String) (json : String) : IO (Task (Wisp.WispResult Wisp.Response)) :=
   client.execute (Wisp.Request.put url |>.withJson json)
 
 /-- Simple DELETE request -/
-def delete (client : Client) (url : String) : IO (Wisp.WispResult Wisp.Response) :=
+def delete (client : Client) (url : String) : IO (Task (Wisp.WispResult Wisp.Response)) :=
   client.execute (Wisp.Request.delete url)
 
 /-- Simple HEAD request -/
-def head (client : Client) (url : String) : IO (Wisp.WispResult Wisp.Response) :=
+def head (client : Client) (url : String) : IO (Task (Wisp.WispResult Wisp.Response)) :=
   client.execute (Wisp.Request.head url)
 
 end Client

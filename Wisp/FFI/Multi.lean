@@ -44,4 +44,8 @@ opaque multiPerform (multi : @& Multi) : IO UInt32
 @[extern "wisp_multi_poll"]
 opaque multiPoll (multi : @& Multi) (timeoutMs : UInt32) : IO UInt32
 
+/-- Read a completed transfer (id, curl code), if any. -/
+@[extern "wisp_multi_info_read"]
+opaque multiInfoRead (multi : @& Multi) : IO (Option (UInt64 × UInt32))
+
 end Wisp.FFI

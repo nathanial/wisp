@@ -18,7 +18,8 @@ def main : IO Unit := do
 
   -- Make a GET request
   IO.println "Fetching https://httpbin.org/get ..."
-  let result ← client.get "https://httpbin.org/get"
+  let task ← client.get "https://httpbin.org/get"
+  let result := task.get
 
   match result with
   | .ok response =>
@@ -41,3 +42,4 @@ def main : IO Unit := do
 
   -- Cleanup
   Wisp.FFI.globalCleanup
+  Wisp.HTTP.Client.shutdown
