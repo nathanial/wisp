@@ -38,6 +38,10 @@ typedef struct {
     size_t option_strings_capacity;
     struct curl_slist* owned_slist;
     curl_mime* owned_mime;
+    // Streaming support
+    int is_streaming;           // 0=buffered (default), 1=streaming
+    size_t stream_read_offset;  // How much body data has been read by Lean
+    int headers_complete;       // 1 if all headers received
 } EasyWrapper;
 
 typedef struct {
@@ -256,6 +260,12 @@ static size_t header_callback(void* contents, size_t size, size_t nmemb, void* u
     memcpy(wrapper->response_headers + wrapper->headers_size, contents, realsize);
     wrapper->headers_size += realsize;
     wrapper->response_headers[wrapper->headers_size] = 0;
+
+    // Check if headers are complete (blank line = just "\r\n")
+    // This signals the end of headers and start of body
+    if (realsize == 2 && ((char*)contents)[0] == '\r' && ((char*)contents)[1] == '\n') {
+        wrapper->headers_complete = 1;
+    }
 
     return realsize;
 }
@@ -942,4 +952,84 @@ LEAN_EXPORT lean_obj_res wisp_url_decode(
     curl_free(decoded);
 
     return lean_io_result_mk_ok(result);
+}
+
+// ============================================================================
+// Streaming Support
+// ============================================================================
+
+LEAN_EXPORT lean_obj_res wisp_easy_set_streaming(
+    b_lean_obj_arg easy,
+    uint8_t streaming,
+    lean_obj_arg world
+) {
+    EasyWrapper* wrapper = (EasyWrapper*)lean_get_external_data(easy);
+    wrapper->is_streaming = streaming ? 1 : 0;
+    wrapper->stream_read_offset = 0;
+    wrapper->headers_complete = 0;
+    return lean_io_result_mk_ok(lean_box(0));
+}
+
+LEAN_EXPORT lean_obj_res wisp_easy_is_streaming(
+    b_lean_obj_arg easy,
+    lean_obj_arg world
+) {
+    EasyWrapper* wrapper = (EasyWrapper*)lean_get_external_data(easy);
+    return lean_io_result_mk_ok(lean_box(wrapper->is_streaming ? 1 : 0));
+}
+
+LEAN_EXPORT lean_obj_res wisp_easy_headers_complete(
+    b_lean_obj_arg easy,
+    lean_obj_arg world
+) {
+    EasyWrapper* wrapper = (EasyWrapper*)lean_get_external_data(easy);
+    return lean_io_result_mk_ok(lean_box(wrapper->headers_complete ? 1 : 0));
+}
+
+// Get new body data since last drain (for streaming)
+// Returns ByteArray of new bytes, updates read offset
+LEAN_EXPORT lean_obj_res wisp_easy_drain_body_chunk(
+    b_lean_obj_arg easy,
+    lean_obj_arg world
+) {
+    EasyWrapper* wrapper = (EasyWrapper*)lean_get_external_data(easy);
+
+    size_t available = wrapper->response_size - wrapper->stream_read_offset;
+    if (available == 0) {
+        // No new data - return empty ByteArray
+        lean_object* empty = lean_alloc_sarray(1, 0, 0);
+        return lean_io_result_mk_ok(empty);
+    }
+
+    // Create ByteArray with new data
+    lean_object* arr = lean_alloc_sarray(1, available, available);
+    memcpy(lean_sarray_cptr(arr),
+           wrapper->response_body + wrapper->stream_read_offset,
+           available);
+
+    // Update read offset
+    wrapper->stream_read_offset = wrapper->response_size;
+
+    return lean_io_result_mk_ok(arr);
+}
+
+// Check if there's pending body data to drain
+LEAN_EXPORT lean_obj_res wisp_easy_has_pending_data(
+    b_lean_obj_arg easy,
+    lean_obj_arg world
+) {
+    EasyWrapper* wrapper = (EasyWrapper*)lean_get_external_data(easy);
+    size_t available = wrapper->response_size - wrapper->stream_read_offset;
+    return lean_io_result_mk_ok(lean_box(available > 0 ? 1 : 0));
+}
+
+// Reset streaming state (for reuse)
+LEAN_EXPORT lean_obj_res wisp_easy_reset_streaming(
+    b_lean_obj_arg easy,
+    lean_obj_arg world
+) {
+    EasyWrapper* wrapper = (EasyWrapper*)lean_get_external_data(easy);
+    wrapper->stream_read_offset = 0;
+    wrapper->headers_complete = 0;
+    return lean_io_result_mk_ok(lean_box(0));
 }

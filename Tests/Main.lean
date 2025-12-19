@@ -712,6 +712,247 @@ def testURLEncoding (client : Wisp.HTTP.Client) : IO TestStats := do
   IO.println ""
   return stats
 
+def testStreamingResponses (client : Wisp.HTTP.Client) : IO TestStats := do
+  IO.println "20. Streaming Responses"
+  IO.println "-----------------------"
+  let mut stats : TestStats := {}
+
+  stats ← runTest "Stream response body" (do
+    let req := Wisp.Request.get "https://httpbin.org/stream-bytes/1000"
+    let task ← client.executeStreaming req
+    match task.get with
+    | .ok stream =>
+      -- Read all chunks and verify total size
+      let body ← stream.readAllBody
+      return stream.status == 200 && body.size == 1000
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "Stream with forEachChunk" (do
+    let req := Wisp.Request.get "https://httpbin.org/stream-bytes/500"
+    let task ← client.executeStreaming req
+    match task.get with
+    | .ok stream =>
+      let totalRef ← IO.mkRef (0 : Nat)
+      stream.forEachChunk fun chunk => do
+        let cur ← totalRef.get
+        totalRef.set (cur + chunk.size)
+      let total ← totalRef.get
+      return stream.status == 200 && total == 500
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "Streaming status check helpers" (do
+    let req := Wisp.Request.get "https://httpbin.org/status/201"
+    let task ← client.executeStreaming req
+    match task.get with
+    | .ok stream =>
+      -- Drain the body
+      let _ ← stream.readAllBody
+      return stream.isSuccess && !stream.isError
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "Streaming 404 response" (do
+    let req := Wisp.Request.get "https://httpbin.org/status/404"
+    let task ← client.executeStreaming req
+    match task.get with
+    | .ok stream =>
+      let _ ← stream.readAllBody
+      return stream.status == 404 && stream.isClientError
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "Streaming headers accessible" (do
+    let req := Wisp.Request.get "https://httpbin.org/response-headers?X-Custom=streaming-test"
+    let task ← client.executeStreaming req
+    match task.get with
+    | .ok stream =>
+      let _ ← stream.readAllBody
+      let hasHeader := stream.headers.get? "X-Custom"
+      return hasHeader.isSome
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "Streaming read body as text" (do
+    let req := Wisp.Request.get "https://httpbin.org/json"
+    let task ← client.executeStreaming req
+    match task.get with
+    | .ok stream =>
+      let bodyText ← stream.readAllBodyText
+      match bodyText with
+      | some text => return text.containsSubstr "slideshow"
+      | none => return false
+    | .error _ => return false
+  ) stats
+
+  IO.println ""
+  return stats
+
+def testSSEParser : IO TestStats := do
+  IO.println "21. SSE Parser"
+  IO.println "--------------"
+  let mut stats : TestStats := {}
+
+  -- Test SSE parsing with a simulated channel
+  stats ← runTest "Parse basic SSE event" (do
+    let channel ← Std.CloseableChannel.Sync.new (α := ByteArray)
+    -- Simulate SSE data: "data: hello\n\n"
+    let sseData := "data: hello\n\n".toUTF8
+    channel.send sseData
+    channel.close
+
+    -- Create a mock streaming response
+    let mockResp : Wisp.StreamingResponse := {
+      status := 200
+      headers := Wisp.Headers.empty
+      bodyChannel := channel
+    }
+
+    let stream ← Wisp.HTTP.SSE.Stream.fromStreaming mockResp
+    let event? ← stream.recv
+    match event? with
+    | some event => return event.data == "hello" && event.event == "message"
+    | none => return false
+  ) stats
+
+  stats ← runTest "Parse SSE event with type" (do
+    let channel ← Std.CloseableChannel.Sync.new (α := ByteArray)
+    let sseData := "event: update\ndata: {\"status\": \"ok\"}\n\n".toUTF8
+    channel.send sseData
+    channel.close
+
+    let mockResp : Wisp.StreamingResponse := {
+      status := 200
+      headers := Wisp.Headers.empty
+      bodyChannel := channel
+    }
+
+    let stream ← Wisp.HTTP.SSE.Stream.fromStreaming mockResp
+    let event? ← stream.recv
+    match event? with
+    | some event => return event.event == "update" && event.data.containsSubstr "status"
+    | none => return false
+  ) stats
+
+  stats ← runTest "Parse SSE event with id" (do
+    let channel ← Std.CloseableChannel.Sync.new (α := ByteArray)
+    let sseData := "id: 123\ndata: test\n\n".toUTF8
+    channel.send sseData
+    channel.close
+
+    let mockResp : Wisp.StreamingResponse := {
+      status := 200
+      headers := Wisp.Headers.empty
+      bodyChannel := channel
+    }
+
+    let stream ← Wisp.HTTP.SSE.Stream.fromStreaming mockResp
+    let event? ← stream.recv
+    match event? with
+    | some event => return event.id == some "123" && event.data == "test"
+    | none => return false
+  ) stats
+
+  stats ← runTest "Parse multiple SSE events" (do
+    let channel ← Std.CloseableChannel.Sync.new (α := ByteArray)
+    let sseData := "data: first\n\ndata: second\n\ndata: third\n\n".toUTF8
+    channel.send sseData
+    channel.close
+
+    let mockResp : Wisp.StreamingResponse := {
+      status := 200
+      headers := Wisp.Headers.empty
+      bodyChannel := channel
+    }
+
+    let stream ← Wisp.HTTP.SSE.Stream.fromStreaming mockResp
+    let events ← stream.toArray
+    return events.size == 3 &&
+           events[0]!.data == "first" &&
+           events[1]!.data == "second" &&
+           events[2]!.data == "third"
+  ) stats
+
+  stats ← runTest "Parse multiline SSE data" (do
+    let channel ← Std.CloseableChannel.Sync.new (α := ByteArray)
+    let sseData := "data: line1\ndata: line2\ndata: line3\n\n".toUTF8
+    channel.send sseData
+    channel.close
+
+    let mockResp : Wisp.StreamingResponse := {
+      status := 200
+      headers := Wisp.Headers.empty
+      bodyChannel := channel
+    }
+
+    let stream ← Wisp.HTTP.SSE.Stream.fromStreaming mockResp
+    let event? ← stream.recv
+    match event? with
+    | some event => return event.data == "line1\nline2\nline3"
+    | none => return false
+  ) stats
+
+  stats ← runTest "Ignore SSE comments" (do
+    let channel ← Std.CloseableChannel.Sync.new (α := ByteArray)
+    let sseData := ": this is a comment\ndata: actual data\n\n".toUTF8
+    channel.send sseData
+    channel.close
+
+    let mockResp : Wisp.StreamingResponse := {
+      status := 200
+      headers := Wisp.Headers.empty
+      bodyChannel := channel
+    }
+
+    let stream ← Wisp.HTTP.SSE.Stream.fromStreaming mockResp
+    let event? ← stream.recv
+    match event? with
+    | some event => return event.data == "actual data"
+    | none => return false
+  ) stats
+
+  stats ← runTest "SSE retry field" (do
+    let channel ← Std.CloseableChannel.Sync.new (α := ByteArray)
+    let sseData := "retry: 5000\ndata: reconnect info\n\n".toUTF8
+    channel.send sseData
+    channel.close
+
+    let mockResp : Wisp.StreamingResponse := {
+      status := 200
+      headers := Wisp.Headers.empty
+      bodyChannel := channel
+    }
+
+    let stream ← Wisp.HTTP.SSE.Stream.fromStreaming mockResp
+    let event? ← stream.recv
+    match event? with
+    | some event => return event.retry == some 5000
+    | none => return false
+  ) stats
+
+  stats ← runTest "SSE lastEventId tracking" (do
+    let channel ← Std.CloseableChannel.Sync.new (α := ByteArray)
+    let sseData := "id: evt-001\ndata: first\n\nid: evt-002\ndata: second\n\n".toUTF8
+    channel.send sseData
+    channel.close
+
+    let mockResp : Wisp.StreamingResponse := {
+      status := 200
+      headers := Wisp.Headers.empty
+      bodyChannel := channel
+    }
+
+    let stream ← Wisp.HTTP.SSE.Stream.fromStreaming mockResp
+    let _ ← stream.recv  -- First event
+    let _ ← stream.recv  -- Second event
+    let lastId ← stream.getLastEventId
+    return lastId == some "evt-002"
+  ) stats
+
+  IO.println ""
+  return stats
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Main
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -746,12 +987,15 @@ def main : IO UInt32 := do
   let s17 ← testCookies client
   let s18 ← testMaxRedirects client
   let s19 ← testURLEncoding client
+  let s20 ← testStreamingResponses client
+  let s21 ← testSSEParser
 
   -- Merge all stats
   let stats := s1.merge s2 |>.merge s3 |>.merge s4 |>.merge s5
     |>.merge s6 |>.merge s7 |>.merge s8 |>.merge s9 |>.merge s10
     |>.merge s11 |>.merge s12 |>.merge s13 |>.merge s14 |>.merge s15
-    |>.merge s16 |>.merge s17 |>.merge s18 |>.merge s19
+    |>.merge s16 |>.merge s17 |>.merge s18 |>.merge s19 |>.merge s20
+    |>.merge s21
 
   -- Summary
   IO.println "========================================="

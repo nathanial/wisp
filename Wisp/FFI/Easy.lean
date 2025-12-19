@@ -290,4 +290,32 @@ opaque urlEncode (easy : @& Easy) (str : @& String) : IO String
 @[extern "wisp_url_decode"]
 opaque urlDecode (easy : @& Easy) (str : @& String) : IO String
 
+-- ============================================================================
+-- Streaming Support
+-- ============================================================================
+
+/-- Enable or disable streaming mode for this handle. -/
+@[extern "wisp_easy_set_streaming"]
+opaque setStreaming (easy : @& Easy) (streaming : Bool) : IO Unit
+
+/-- Check if streaming mode is enabled. -/
+@[extern "wisp_easy_is_streaming"]
+opaque isStreaming (easy : @& Easy) : IO Bool
+
+/-- Check if all headers have been received. -/
+@[extern "wisp_easy_headers_complete"]
+opaque headersComplete (easy : @& Easy) : IO Bool
+
+/-- Drain any new body data since last call. Returns empty if no new data. -/
+@[extern "wisp_easy_drain_body_chunk"]
+opaque drainBodyChunk (easy : @& Easy) : IO ByteArray
+
+/-- Check if there's pending body data to drain. -/
+@[extern "wisp_easy_has_pending_data"]
+opaque hasPendingData (easy : @& Easy) : IO Bool
+
+/-- Reset streaming state (read offset, headers_complete flag). -/
+@[extern "wisp_easy_reset_streaming"]
+opaque resetStreaming (easy : @& Easy) : IO Unit
+
 end Wisp.FFI

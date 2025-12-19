@@ -67,4 +67,12 @@ LEAN_EXPORT lean_obj_res wisp_multi_info_read(b_lean_obj_arg multi, lean_obj_arg
 LEAN_EXPORT lean_obj_res wisp_url_encode(b_lean_obj_arg easy, b_lean_obj_arg str, lean_obj_arg world);
 LEAN_EXPORT lean_obj_res wisp_url_decode(b_lean_obj_arg easy, b_lean_obj_arg str, lean_obj_arg world);
 
+// Streaming support
+LEAN_EXPORT lean_obj_res wisp_easy_set_streaming(b_lean_obj_arg easy, uint8_t streaming, lean_obj_arg world);
+LEAN_EXPORT lean_obj_res wisp_easy_is_streaming(b_lean_obj_arg easy, lean_obj_arg world);
+LEAN_EXPORT lean_obj_res wisp_easy_headers_complete(b_lean_obj_arg easy, lean_obj_arg world);
+LEAN_EXPORT lean_obj_res wisp_easy_drain_body_chunk(b_lean_obj_arg easy, lean_obj_arg world);
+LEAN_EXPORT lean_obj_res wisp_easy_has_pending_data(b_lean_obj_arg easy, lean_obj_arg world);
+LEAN_EXPORT lean_obj_res wisp_easy_reset_streaming(b_lean_obj_arg easy, lean_obj_arg world);
+
 #endif // WISP_FFI_H
