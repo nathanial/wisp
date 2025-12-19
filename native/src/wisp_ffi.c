@@ -32,6 +32,11 @@ typedef struct {
     char* response_headers;
     size_t headers_size;
     size_t headers_capacity;
+    char** option_strings;
+    size_t option_strings_count;
+    size_t option_strings_capacity;
+    struct curl_slist* owned_slist;
+    curl_mime* owned_mime;
 } EasyWrapper;
 
 typedef struct {
@@ -61,6 +66,14 @@ static void easy_finalizer(void* ptr) {
         if (wrapper->handle) curl_easy_cleanup(wrapper->handle);
         if (wrapper->response_body) free(wrapper->response_body);
         if (wrapper->response_headers) free(wrapper->response_headers);
+        if (wrapper->option_strings) {
+            for (size_t i = 0; i < wrapper->option_strings_count; i++) {
+                free(wrapper->option_strings[i]);
+            }
+            free(wrapper->option_strings);
+        }
+        if (wrapper->owned_slist) curl_slist_free_all(wrapper->owned_slist);
+        if (wrapper->owned_mime) curl_mime_free(wrapper->owned_mime);
         free(wrapper);
     }
 }
@@ -127,6 +140,40 @@ static lean_object* mk_curlm_error(CURLMcode code) {
     char msg[256];
     snprintf(msg, sizeof(msg), "CURLM error %d: %s", code, curl_multi_strerror(code));
     return lean_io_result_mk_error(lean_mk_io_user_error(lean_mk_string(msg)));
+}
+
+static void easy_store_string(EasyWrapper* wrapper, char* str) {
+    if (!str) return;
+    if (wrapper->option_strings_count == wrapper->option_strings_capacity) {
+        size_t new_capacity = wrapper->option_strings_capacity == 0 ? 8 : wrapper->option_strings_capacity * 2;
+        char** new_list = realloc(wrapper->option_strings, new_capacity * sizeof(char*));
+        if (!new_list) {
+            free(str);
+            return;
+        }
+        wrapper->option_strings = new_list;
+        wrapper->option_strings_capacity = new_capacity;
+    }
+    wrapper->option_strings[wrapper->option_strings_count++] = str;
+}
+
+static void easy_clear_strings(EasyWrapper* wrapper) {
+    if (!wrapper->option_strings) return;
+    for (size_t i = 0; i < wrapper->option_strings_count; i++) {
+        free(wrapper->option_strings[i]);
+    }
+    wrapper->option_strings_count = 0;
+}
+
+static void easy_clear_owned_handles(EasyWrapper* wrapper) {
+    if (wrapper->owned_slist) {
+        curl_slist_free_all(wrapper->owned_slist);
+        wrapper->owned_slist = NULL;
+    }
+    if (wrapper->owned_mime) {
+        curl_mime_free(wrapper->owned_mime);
+        wrapper->owned_mime = NULL;
+    }
 }
 
 // Find CA bundle (same logic as afferent)
@@ -294,6 +341,8 @@ LEAN_EXPORT lean_obj_res wisp_easy_cleanup(b_lean_obj_arg easy, lean_obj_arg wor
 LEAN_EXPORT lean_obj_res wisp_easy_reset(b_lean_obj_arg easy, lean_obj_arg world) {
     EasyWrapper* wrapper = (EasyWrapper*)lean_get_external_data(easy);
     curl_easy_reset(wrapper->handle);
+    easy_clear_strings(wrapper);
+    easy_clear_owned_handles(wrapper);
 
     // Reset response buffers
     if (wrapper->response_body) {
@@ -345,12 +394,18 @@ LEAN_EXPORT lean_obj_res wisp_easy_setopt_string(
 ) {
     EasyWrapper* wrapper = (EasyWrapper*)lean_get_external_data(easy);
     const char* str = lean_string_cstr(value);
+    char* str_copy = strdup(str);
+    if (!str_copy) {
+        return mk_io_error("Failed to allocate string");
+    }
 
-    CURLcode res = curl_easy_setopt(wrapper->handle, (CURLoption)option, str);
+    CURLcode res = curl_easy_setopt(wrapper->handle, (CURLoption)option, str_copy);
     if (res != CURLE_OK) {
+        free(str_copy);
         return mk_curl_error(res);
     }
 
+    easy_store_string(wrapper, str_copy);
     return lean_io_result_mk_ok(lean_box(0));
 }
 
@@ -382,6 +437,14 @@ LEAN_EXPORT lean_obj_res wisp_easy_setopt_slist(
     CURLcode res = curl_easy_setopt(wrapper->handle, (CURLoption)option, slist_wrapper->list);
     if (res != CURLE_OK) {
         return mk_curl_error(res);
+    }
+
+    if (slist_wrapper->list) {
+        if (wrapper->owned_slist) {
+            curl_slist_free_all(wrapper->owned_slist);
+        }
+        wrapper->owned_slist = slist_wrapper->list;
+        slist_wrapper->list = NULL;
     }
 
     return lean_io_result_mk_ok(lean_box(0));
@@ -421,6 +484,14 @@ LEAN_EXPORT lean_obj_res wisp_easy_setopt_mime(
     CURLcode res = curl_easy_setopt(wrapper->handle, CURLOPT_MIMEPOST, mime_wrapper->mime);
     if (res != CURLE_OK) {
         return mk_curl_error(res);
+    }
+
+    if (mime_wrapper->mime) {
+        if (wrapper->owned_mime) {
+            curl_mime_free(wrapper->owned_mime);
+        }
+        wrapper->owned_mime = mime_wrapper->mime;
+        mime_wrapper->mime = NULL;
     }
 
     return lean_io_result_mk_ok(lean_box(0));
