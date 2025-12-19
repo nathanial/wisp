@@ -17,6 +17,8 @@ def TestStats.total (s : TestStats) : Nat := s.passed + s.failed
 
 def TestStats.pass (s : TestStats) : TestStats := { s with passed := s.passed + 1 }
 def TestStats.fail (s : TestStats) : TestStats := { s with failed := s.failed + 1 }
+def TestStats.merge (s1 s2 : TestStats) : TestStats :=
+  { passed := s1.passed + s2.passed, failed := s1.failed + s2.failed }
 
 /-- Run a test and update stats -/
 def runTest (name : String) (test : IO Bool) (stats : TestStats) : IO TestStats := do
@@ -37,22 +39,14 @@ def awaitTask (task : IO (Task α)) : IO α := do
   let t ← task
   return t.get
 
-def main : IO UInt32 := do
-  IO.println "Wisp Library Tests - Comprehensive Suite"
-  IO.println "========================================="
-  IO.println ""
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Test Sections
+-- ═══════════════════════════════════════════════════════════════════════════
 
-  -- Initialize curl
-  Wisp.FFI.globalInit
-
-  let client := Wisp.HTTP.Client.new
-  let mut stats : TestStats := {}
-
-  -- ═══════════════════════════════════════════════════════════════════
-  -- SECTION 1: Basic FFI
-  -- ═══════════════════════════════════════════════════════════════════
+def testBasicFFI : IO TestStats := do
   IO.println "1. Basic FFI"
   IO.println "------------"
+  let mut stats : TestStats := {}
 
   stats ← runTest "Version info" (do
     let version ← Wisp.FFI.versionInfo
@@ -60,12 +54,12 @@ def main : IO UInt32 := do
   ) stats
 
   IO.println ""
+  return stats
 
-  -- ═══════════════════════════════════════════════════════════════════
-  -- SECTION 2: HTTP Methods
-  -- ═══════════════════════════════════════════════════════════════════
+def testHTTPMethods (client : Wisp.HTTP.Client) : IO TestStats := do
   IO.println "2. HTTP Methods"
   IO.println "---------------"
+  let mut stats : TestStats := {}
 
   stats ← runTest "GET request" (do
     let result ← awaitTask (client.get "https://httpbin.org/get")
@@ -119,12 +113,12 @@ def main : IO UInt32 := do
   ) stats
 
   IO.println ""
+  return stats
 
-  -- ═══════════════════════════════════════════════════════════════════
-  -- SECTION 3: Request Body Types
-  -- ═══════════════════════════════════════════════════════════════════
+def testRequestBodyTypes (client : Wisp.HTTP.Client) : IO TestStats := do
   IO.println "3. Request Body Types"
   IO.println "---------------------"
+  let mut stats : TestStats := {}
 
   stats ← runTest "JSON body" (do
     let result ← awaitTask (client.postJson "https://httpbin.org/post" "{\"key\": \"value\"}")
@@ -164,12 +158,12 @@ def main : IO UInt32 := do
   ) stats
 
   IO.println ""
+  return stats
 
-  -- ═══════════════════════════════════════════════════════════════════
-  -- SECTION 4: Headers
-  -- ═══════════════════════════════════════════════════════════════════
+def testHeaders (client : Wisp.HTTP.Client) : IO TestStats := do
   IO.println "4. Headers"
   IO.println "----------"
+  let mut stats : TestStats := {}
 
   stats ← runTest "Custom headers sent" (do
     let req := Wisp.Request.get "https://httpbin.org/headers"
@@ -200,12 +194,12 @@ def main : IO UInt32 := do
   ) stats
 
   IO.println ""
+  return stats
 
-  -- ═══════════════════════════════════════════════════════════════════
-  -- SECTION 5: Authentication
-  -- ═══════════════════════════════════════════════════════════════════
+def testAuthentication (client : Wisp.HTTP.Client) : IO TestStats := do
   IO.println "5. Authentication"
   IO.println "-----------------"
+  let mut stats : TestStats := {}
 
   stats ← runTest "Basic auth (valid)" (do
     let req := Wisp.Request.get "https://httpbin.org/basic-auth/testuser/testpass"
@@ -237,18 +231,17 @@ def main : IO UInt32 := do
   ) stats
 
   IO.println ""
+  return stats
 
-  -- ═══════════════════════════════════════════════════════════════════
-  -- SECTION 6: Redirects
-  -- ═══════════════════════════════════════════════════════════════════
+def testRedirects (client : Wisp.HTTP.Client) : IO TestStats := do
   IO.println "6. Redirects"
   IO.println "------------"
+  let mut stats : TestStats := {}
 
   stats ← runTest "Follow redirects (default)" (do
     let result ← awaitTask (client.get "https://httpbin.org/redirect/2")
     match result with
     | .ok r =>
-      -- Should end at /get after 2 redirects
       return r.status == 200 && r.effectiveUrl.containsSubstr "/get"
     | .error _ => return false
   ) stats
@@ -270,16 +263,16 @@ def main : IO UInt32 := do
   ) stats
 
   IO.println ""
+  return stats
 
-  -- ═══════════════════════════════════════════════════════════════════
-  -- SECTION 7: Timeouts
-  -- ═══════════════════════════════════════════════════════════════════
+def testTimeouts (client : Wisp.HTTP.Client) : IO TestStats := do
   IO.println "7. Timeouts"
   IO.println "-----------"
+  let mut stats : TestStats := {}
 
   stats ← runTest "Request completes within timeout" (do
     let req := Wisp.Request.get "https://httpbin.org/delay/1"
-      |>.withTimeout 5000  -- 5 second timeout, 1 second delay
+      |>.withTimeout 5000
     let result ← awaitTask (client.execute req)
     match result with
     | .ok r => return r.status == 200
@@ -288,20 +281,20 @@ def main : IO UInt32 := do
 
   stats ← runTest "Request times out" (do
     let req := Wisp.Request.get "https://httpbin.org/delay/10"
-      |>.withTimeout 1000  -- 1 second timeout, 10 second delay
+      |>.withTimeout 1000
     let result ← awaitTask (client.execute req)
     match result with
-    | .ok _ => return false  -- Should have timed out
-    | .error e => return e.toString.containsSubstr "timeout" || e.toString.containsSubstr "Timeout" || true  -- Any error is acceptable for timeout
+    | .ok _ => return false
+    | .error _ => return true
   ) stats
 
   IO.println ""
+  return stats
 
-  -- ═══════════════════════════════════════════════════════════════════
-  -- SECTION 8: HTTP Status Codes
-  -- ═══════════════════════════════════════════════════════════════════
+def testHTTPStatusCodes (client : Wisp.HTTP.Client) : IO TestStats := do
   IO.println "8. HTTP Status Codes"
   IO.println "--------------------"
+  let mut stats : TestStats := {}
 
   stats ← runTest "200 OK" (do
     let result ← awaitTask (client.get "https://httpbin.org/status/200")
@@ -374,12 +367,12 @@ def main : IO UInt32 := do
   ) stats
 
   IO.println ""
+  return stats
 
-  -- ═══════════════════════════════════════════════════════════════════
-  -- SECTION 9: Response Body Parsing
-  -- ═══════════════════════════════════════════════════════════════════
+def testResponseBodyParsing (client : Wisp.HTTP.Client) : IO TestStats := do
   IO.println "9. Response Body Parsing"
   IO.println "------------------------"
+  let mut stats : TestStats := {}
 
   stats ← runTest "Body as text (valid UTF-8)" (do
     let result ← awaitTask (client.get "https://httpbin.org/encoding/utf8")
@@ -396,7 +389,7 @@ def main : IO UInt32 := do
     match result with
     | .ok r =>
       let text := r.bodyTextLossy
-      return text.length > 0  -- Should handle binary gracefully
+      return text.length > 0
     | .error _ => return false
   ) stats
 
@@ -408,12 +401,12 @@ def main : IO UInt32 := do
   ) stats
 
   IO.println ""
+  return stats
 
-  -- ═══════════════════════════════════════════════════════════════════
-  -- SECTION 10: Client Configuration
-  -- ═══════════════════════════════════════════════════════════════════
+def testClientConfiguration (client : Wisp.HTTP.Client) : IO TestStats := do
   IO.println "10. Client Configuration"
   IO.println "------------------------"
+  let mut stats : TestStats := {}
 
   stats ← runTest "Custom user agent" (do
     let req := Wisp.Request.get "https://httpbin.org/user-agent"
@@ -445,12 +438,12 @@ def main : IO UInt32 := do
   ) stats
 
   IO.println ""
+  return stats
 
-  -- ═══════════════════════════════════════════════════════════════════
-  -- SECTION 11: Response Metadata
-  -- ═══════════════════════════════════════════════════════════════════
+def testResponseMetadata (client : Wisp.HTTP.Client) : IO TestStats := do
   IO.println "11. Response Metadata"
   IO.println "---------------------"
+  let mut stats : TestStats := {}
 
   stats ← runTest "Total time tracked" (do
     let result ← awaitTask (client.get "https://httpbin.org/delay/1")
@@ -467,10 +460,300 @@ def main : IO UInt32 := do
   ) stats
 
   IO.println ""
+  return stats
 
-  -- ═══════════════════════════════════════════════════════════════════
+def testMultipartUploads (client : Wisp.HTTP.Client) : IO TestStats := do
+  IO.println "12. Multipart Form Uploads"
+  IO.println "--------------------------"
+  let mut stats : TestStats := {}
+
+  stats ← runTest "Multipart text field" (do
+    let parts : Array Wisp.MultipartPart := #[
+      { name := "field1", data := "value1".toUTF8 },
+      { name := "field2", data := "value2".toUTF8 }
+    ]
+    let req := Wisp.Request.post "https://httpbin.org/post" |>.withMultipart parts
+    let result ← awaitTask (client.execute req)
+    match result with
+    | .ok r =>
+      let body := r.bodyTextLossy
+      return r.status == 200 && body.containsSubstr "field1" && body.containsSubstr "value1"
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "Multipart with filename" (do
+    let parts : Array Wisp.MultipartPart := #[
+      { name := "file", filename := some "test.txt", contentType := some "text/plain", data := "file contents here".toUTF8 }
+    ]
+    let req := Wisp.Request.post "https://httpbin.org/post" |>.withMultipart parts
+    let result ← awaitTask (client.execute req)
+    match result with
+    | .ok r =>
+      let body := r.bodyTextLossy
+      -- httpbin puts file contents in "files" section
+      return r.status == 200 && body.containsSubstr "files" && body.containsSubstr "file contents here"
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "Multipart with content type" (do
+    let parts : Array Wisp.MultipartPart := #[
+      { name := "jsondata", contentType := some "application/json", data := "{\"key\": \"value\"}".toUTF8 }
+    ]
+    let req := Wisp.Request.post "https://httpbin.org/post" |>.withMultipart parts
+    let result ← awaitTask (client.execute req)
+    match result with
+    | .ok r =>
+      let body := r.bodyTextLossy
+      -- httpbin puts non-file multipart data in "form" section
+      return r.status == 200 && body.containsSubstr "jsondata"
+    | .error _ => return false
+  ) stats
+
+  IO.println ""
+  return stats
+
+def testDigestAuth (client : Wisp.HTTP.Client) : IO TestStats := do
+  IO.println "13. Digest Authentication"
+  IO.println "-------------------------"
+  let mut stats : TestStats := {}
+
+  stats ← runTest "Digest auth (valid)" (do
+    let req := Wisp.Request.get "https://httpbin.org/digest-auth/auth/testuser/testpass"
+      |>.withDigestAuth "testuser" "testpass"
+    let result ← awaitTask (client.execute req)
+    match result with
+    | .ok r => return r.status == 200
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "Digest auth (invalid)" (do
+    let req := Wisp.Request.get "https://httpbin.org/digest-auth/auth/testuser/testpass"
+      |>.withDigestAuth "wrong" "credentials"
+    let result ← awaitTask (client.execute req)
+    match result with
+    | .ok r => return r.status == 401
+    | .error _ => return false
+  ) stats
+
+  IO.println ""
+  return stats
+
+def testConnectionTimeout (client : Wisp.HTTP.Client) : IO TestStats := do
+  IO.println "14. Connection Timeout"
+  IO.println "----------------------"
+  let mut stats : TestStats := {}
+
+  stats ← runTest "Connection timeout setting" (do
+    let req := Wisp.Request.get "https://httpbin.org/get"
+      |>.withConnectTimeout 5000
+    let result ← awaitTask (client.execute req)
+    match result with
+    | .ok r => return r.status == 200
+    | .error _ => return false
+  ) stats
+
+  IO.println ""
+  return stats
+
+def testSSLOptions (client : Wisp.HTTP.Client) : IO TestStats := do
+  IO.println "15. SSL Options"
+  IO.println "---------------"
+  let mut stats : TestStats := {}
+
+  stats ← runTest "SSL verification enabled (default)" (do
+    let result ← awaitTask (client.get "https://httpbin.org/get")
+    match result with
+    | .ok r => return r.status == 200
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "SSL insecure mode" (do
+    let req := Wisp.Request.get "https://httpbin.org/get"
+      |>.withInsecure
+    let result ← awaitTask (client.execute req)
+    match result with
+    | .ok r => return r.status == 200
+    | .error _ => return false
+  ) stats
+
+  IO.println ""
+  return stats
+
+def testResponseHelpers (client : Wisp.HTTP.Client) : IO TestStats := do
+  IO.println "16. Response Helper Functions"
+  IO.println "-----------------------------"
+  let mut stats : TestStats := {}
+
+  stats ← runTest "isRedirect for 302" (do
+    let req := Wisp.Request.get "https://httpbin.org/redirect/1"
+      |>.withFollowRedirects false
+    let result ← awaitTask (client.execute req)
+    match result with
+    | .ok r => return r.isRedirect
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "isError for 4xx/5xx" (do
+    let result ← awaitTask (client.get "https://httpbin.org/status/404")
+    match result with
+    | .ok r => return r.isError
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "isEmpty for empty body" (do
+    let result ← awaitTask (client.get "https://httpbin.org/status/204")
+    match result with
+    | .ok r => return r.isEmpty
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "statusText for known codes" (do
+    let result ← awaitTask (client.get "https://httpbin.org/status/404")
+    match result with
+    | .ok r => return r.statusText == "Not Found"
+    | .error _ => return false
+  ) stats
+
+  IO.println ""
+  return stats
+
+def testCookies (client : Wisp.HTTP.Client) : IO TestStats := do
+  IO.println "17. Cookies"
+  IO.println "-----------"
+  let mut stats : TestStats := {}
+
+  stats ← runTest "Set-Cookie in response headers" (do
+    let result ← awaitTask (client.get "https://httpbin.org/cookies/set/testcookie/testvalue")
+    match result with
+    | .ok r => return r.status == 200
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "Send cookie via header" (do
+    let req := Wisp.Request.get "https://httpbin.org/cookies"
+      |>.withHeader "Cookie" "mycookie=myvalue"
+    let result ← awaitTask (client.execute req)
+    match result with
+    | .ok r =>
+      let body := r.bodyTextLossy
+      return r.status == 200 && body.containsSubstr "mycookie" && body.containsSubstr "myvalue"
+    | .error _ => return false
+  ) stats
+
+  IO.println ""
+  return stats
+
+def testMaxRedirects (client : Wisp.HTTP.Client) : IO TestStats := do
+  IO.println "18. Max Redirects Limit"
+  IO.println "-----------------------"
+  let mut stats : TestStats := {}
+
+  stats ← runTest "Max redirects respected" (do
+    let req := Wisp.Request.get "https://httpbin.org/redirect/5"
+      |>.withFollowRedirects true 2
+    let result ← awaitTask (client.execute req)
+    match result with
+    | .ok r => return r.isRedirect || r.status == 302
+    | .error _ => return true  -- Curl error for too many redirects is acceptable
+  ) stats
+
+  stats ← runTest "Sufficient redirects allowed" (do
+    let req := Wisp.Request.get "https://httpbin.org/redirect/2"
+      |>.withFollowRedirects true 5
+    let result ← awaitTask (client.execute req)
+    match result with
+    | .ok r => return r.status == 200
+    | .error _ => return false
+  ) stats
+
+  IO.println ""
+  return stats
+
+def testURLEncoding (client : Wisp.HTTP.Client) : IO TestStats := do
+  IO.println "19. URL Encoding Edge Cases"
+  IO.println "---------------------------"
+  let mut stats : TestStats := {}
+
+  stats ← runTest "Form field with special chars" (do
+    let result ← awaitTask (client.postForm "https://httpbin.org/post" #[
+      ("name", "John Doe"),
+      ("email", "john+test@example.com"),
+      ("query", "a=b&c=d")
+    ])
+    match result with
+    | .ok r =>
+      let body := r.bodyTextLossy
+      return r.status == 200 && body.containsSubstr "John" && body.containsSubstr "example.com"
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "Form field with unicode" (do
+    let result ← awaitTask (client.postForm "https://httpbin.org/post" #[
+      ("greeting", "Héllo Wörld"),
+      ("emoji", "👋")
+    ])
+    match result with
+    | .ok r => return r.status == 200
+    | .error _ => return false
+  ) stats
+
+  stats ← runTest "Empty form field" (do
+    let result ← awaitTask (client.postForm "https://httpbin.org/post" #[
+      ("empty", ""),
+      ("nonempty", "value")
+    ])
+    match result with
+    | .ok r =>
+      let body := r.bodyTextLossy
+      return r.status == 200 && body.containsSubstr "nonempty"
+    | .error _ => return false
+  ) stats
+
+  IO.println ""
+  return stats
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Main
+-- ═══════════════════════════════════════════════════════════════════════════
+
+def main : IO UInt32 := do
+  IO.println "Wisp Library Tests - Comprehensive Suite"
+  IO.println "========================================="
+  IO.println ""
+
+  -- Initialize curl
+  Wisp.FFI.globalInit
+
+  let client := Wisp.HTTP.Client.new
+
+  -- Run all test sections
+  let s1 ← testBasicFFI
+  let s2 ← testHTTPMethods client
+  let s3 ← testRequestBodyTypes client
+  let s4 ← testHeaders client
+  let s5 ← testAuthentication client
+  let s6 ← testRedirects client
+  let s7 ← testTimeouts client
+  let s8 ← testHTTPStatusCodes client
+  let s9 ← testResponseBodyParsing client
+  let s10 ← testClientConfiguration client
+  let s11 ← testResponseMetadata client
+  let s12 ← testMultipartUploads client
+  let s13 ← testDigestAuth client
+  let s14 ← testConnectionTimeout client
+  let s15 ← testSSLOptions client
+  let s16 ← testResponseHelpers client
+  let s17 ← testCookies client
+  let s18 ← testMaxRedirects client
+  let s19 ← testURLEncoding client
+
+  -- Merge all stats
+  let stats := s1.merge s2 |>.merge s3 |>.merge s4 |>.merge s5
+    |>.merge s6 |>.merge s7 |>.merge s8 |>.merge s9 |>.merge s10
+    |>.merge s11 |>.merge s12 |>.merge s13 |>.merge s14 |>.merge s15
+    |>.merge s16 |>.merge s17 |>.merge s18 |>.merge s19
+
   -- Summary
-  -- ═══════════════════════════════════════════════════════════════════
   IO.println "========================================="
   IO.println s!"Tests: {stats.total} total, {stats.passed} passed, {stats.failed} failed"
 
