@@ -4,6 +4,8 @@ open Lake DSL System
 package wisp where
   precompileModules := true
 
+require crucible from git "https://github.com/nathanial/crucible" @ "master"
+
 -- Platform-specific curl library paths
 -- On macOS, curl may be in various locations:
 -- - /opt/homebrew/lib (Homebrew Apple Silicon)
