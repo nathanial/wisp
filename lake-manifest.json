@@ -5,7 +5,7 @@
    "type": "git",
    "subDir": null,
    "scope": "",
-   "rev": "205519aafbc3a89aa2bd521ac26eb2dec2d42976",
+   "rev": "9cb952ff4854c6b3a3f84b5271311d94be78de3c",
    "name": "crucible",
    "manifestFile": "lake-manifest.json",
    "inputRev": "master",
