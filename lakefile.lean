@@ -8,17 +8,21 @@ require crucible from ".." / "crucible"
 
 -- Platform-specific curl library paths
 -- On macOS, curl may be in various locations:
+-- - /opt/homebrew/opt/curl (Homebrew keg-only curl with WebSocket support)
 -- - /opt/homebrew/lib (Homebrew Apple Silicon)
 -- - /usr/local/lib (Homebrew Intel)
 -- - /opt/homebrew/anaconda3/lib (Anaconda)
 -- - System curl (via -lcurl with SDK paths)
+-- NOTE: Homebrew curl 8.11+ required for WebSocket support (ws:// and wss://)
 def curlLinkArgs : Array String :=
   if Platform.isOSX then
-    #["-L/opt/homebrew/lib",
+    #["-L/opt/homebrew/opt/curl/lib",  -- Homebrew keg-only curl (WebSocket support)
+      "-L/opt/homebrew/lib",
       "-L/usr/local/lib",
       "-L/opt/homebrew/anaconda3/lib",
       "-lcurl",
       -- Add rpath so dylibs can find libcurl at runtime
+      "-Wl,-rpath,/opt/homebrew/opt/curl/lib",
       "-Wl,-rpath,/opt/homebrew/lib",
       "-Wl,-rpath,/opt/homebrew/anaconda3/lib",
       "-Wl,-rpath,/usr/local/lib"]
@@ -30,7 +34,8 @@ def curlLinkArgs : Array String :=
 
 def curlIncludeArgs : Array String :=
   if Platform.isOSX then
-    #["-I/opt/homebrew/include",
+    #["-I/opt/homebrew/opt/curl/include",  -- Homebrew keg-only curl (WebSocket support)
+      "-I/opt/homebrew/include",
       "-I/usr/local/include",
       "-I/opt/homebrew/anaconda3/include"]
   else

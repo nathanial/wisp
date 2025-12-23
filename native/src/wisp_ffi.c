@@ -1033,3 +1033,119 @@ LEAN_EXPORT lean_obj_res wisp_easy_reset_streaming(
     wrapper->headers_complete = 0;
     return lean_io_result_mk_ok(lean_box(0));
 }
+
+// ============================================================================
+// WebSocket Support (curl 7.86+)
+// ============================================================================
+
+// Check if WebSocket support is available in the linked libcurl at runtime
+// Since curl 8.11+, WebSocket is enabled by default
+LEAN_EXPORT lean_obj_res wisp_ws_check_support(lean_obj_arg world) {
+#if LIBCURL_VERSION_NUM >= 0x075600  // 7.86.0 - first version with WebSocket API
+    // Check runtime support via curl_version_info
+    // The library linked at runtime may differ from compile time
+    curl_version_info_data* info = curl_version_info(CURLVERSION_NOW);
+    #ifdef CURL_VERSION_WEBSOCKETS
+    int supported = (info->features & CURL_VERSION_WEBSOCKETS) != 0;
+    #else
+    // CURL_VERSION_WEBSOCKETS not defined at compile time, assume available
+    // if we compiled against 7.86+ (the API exists even if flag is missing)
+    int supported = 1;
+    #endif
+    return lean_io_result_mk_ok(lean_box(supported ? 1 : 0));
+#else
+    return lean_io_result_mk_ok(lean_box(0));
+#endif
+}
+
+// Send a WebSocket frame
+LEAN_EXPORT lean_obj_res wisp_ws_send(
+    b_lean_obj_arg easy_obj,
+    b_lean_obj_arg data,
+    uint32_t frame_type,
+    lean_obj_arg world
+) {
+#if LIBCURL_VERSION_NUM >= 0x075600  // 7.86.0
+    EasyWrapper* wrapper = (EasyWrapper*)lean_get_external_data(easy_obj);
+    size_t len = lean_sarray_size(data);
+    const char* buf = (const char*)lean_sarray_cptr(data);
+
+    size_t sent;
+    CURLcode res = curl_ws_send(wrapper->handle, buf, len, &sent, 0, frame_type);
+    if (res != CURLE_OK) {
+        return mk_curl_error(res);
+    }
+    return lean_io_result_mk_ok(lean_box(0));
+#else
+    return mk_io_error("WebSocket support not available in libcurl");
+#endif
+}
+
+// Receive a WebSocket frame (returns Option (ByteArray × UInt32))
+LEAN_EXPORT lean_obj_res wisp_ws_recv(b_lean_obj_arg easy_obj, lean_obj_arg world) {
+#if LIBCURL_VERSION_NUM >= 0x075600  // 7.86.0
+    EasyWrapper* wrapper = (EasyWrapper*)lean_get_external_data(easy_obj);
+    char buffer[65536];
+    size_t received = 0;
+    const struct curl_ws_frame* meta = NULL;
+
+    CURLcode res = curl_ws_recv(wrapper->handle, buffer, sizeof(buffer), &received, &meta);
+    if (res == CURLE_AGAIN) {
+        // No data available - return None (constructor 0, no args)
+        return lean_io_result_mk_ok(lean_box(0));  // Option.none
+    }
+    if (res != CURLE_OK) {
+        return mk_curl_error(res);
+    }
+
+    // Build (ByteArray × UInt32) tuple
+    lean_object* bytes = lean_alloc_sarray(1, received, received);
+    memcpy(lean_sarray_cptr(bytes), buffer, received);
+
+    // Get frame flags from metadata
+    uint32_t flags = meta ? meta->flags : 0;
+
+    lean_object* pair = lean_alloc_ctor(0, 2, 0);
+    lean_ctor_set(pair, 0, bytes);
+    lean_ctor_set(pair, 1, lean_box_uint32(flags));
+
+    // Return Some(pair) - constructor 1 with 1 argument
+    lean_object* some = lean_alloc_ctor(1, 1, 0);
+    lean_ctor_set(some, 0, pair);
+    return lean_io_result_mk_ok(some);
+#else
+    return mk_io_error("WebSocket support not available in libcurl");
+#endif
+}
+
+// Get WebSocket metadata (offset, bytesleft, flags) after a recv call
+LEAN_EXPORT lean_obj_res wisp_ws_meta(b_lean_obj_arg easy_obj, lean_obj_arg world) {
+#if LIBCURL_VERSION_NUM >= 0x075600  // 7.86.0
+    EasyWrapper* wrapper = (EasyWrapper*)lean_get_external_data(easy_obj);
+    const struct curl_ws_frame* meta = curl_ws_meta(wrapper->handle);
+
+    uint64_t offset = 0;
+    uint64_t bytesleft = 0;
+    uint32_t flags = 0;
+
+    if (meta) {
+        offset = meta->offset;
+        bytesleft = meta->bytesleft;
+        flags = meta->flags;
+    }
+
+    // Build (UInt64 × UInt64 × UInt32) tuple
+    // This is Prod UInt64 (Prod UInt64 UInt32)
+    lean_object* inner = lean_alloc_ctor(0, 2, 0);
+    lean_ctor_set(inner, 0, lean_box_uint64(bytesleft));
+    lean_ctor_set(inner, 1, lean_box_uint32(flags));
+
+    lean_object* outer = lean_alloc_ctor(0, 2, 0);
+    lean_ctor_set(outer, 0, lean_box_uint64(offset));
+    lean_ctor_set(outer, 1, inner);
+
+    return lean_io_result_mk_ok(outer);
+#else
+    return mk_io_error("WebSocket support not available in libcurl");
+#endif
+}

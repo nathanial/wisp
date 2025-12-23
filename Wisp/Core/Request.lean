@@ -61,6 +61,16 @@ structure SslOptions where
   clientKeyPath : Option String := none
   deriving Inhabited
 
+/-- Cookie jar configuration for automatic cookie handling -/
+structure CookieJar where
+  /-- File to read cookies from (use "" to enable in-memory cookie engine) -/
+  cookieFile : Option String := none
+  /-- File to write cookies to after request completes -/
+  cookieJarFile : Option String := none
+  /-- Inline cookie string to send (format: "name1=value1; name2=value2") -/
+  cookies : Option String := none
+  deriving Inhabited
+
 /-- HTTP Request with builder pattern -/
 structure Request where
   /-- HTTP method -/
@@ -87,6 +97,8 @@ structure Request where
   userAgent : String := "Wisp/1.0 (Lean4)"
   /-- Accept-Encoding header value -/
   acceptEncoding : Option String := some "gzip, deflate"
+  /-- Cookie jar configuration -/
+  cookieJar : CookieJar := {}
   /-- Enable verbose curl output (for debugging) -/
   verbose : Bool := false
   deriving Inhabited
@@ -196,6 +208,18 @@ def withAcceptEncoding (r : Request) (encoding : Option String) : Request :=
 /-- Enable verbose output -/
 def withVerbose (r : Request) (verbose : Bool := true) : Request :=
   { r with verbose := verbose }
+
+/-- Configure cookie jar with file paths for reading and writing cookies -/
+def withCookieJar (r : Request) (readFile : Option String := none) (writeFile : Option String := none) : Request :=
+  { r with cookieJar := { cookieFile := readFile, cookieJarFile := writeFile } }
+
+/-- Enable in-memory cookie handling (persists cookies across redirects within same request) -/
+def withCookieEngine (r : Request) : Request :=
+  { r with cookieJar := { cookieFile := some "" } }
+
+/-- Set a cookie string to send (format: "name1=value1; name2=value2") -/
+def withCookies (r : Request) (cookies : String) : Request :=
+  { r with cookieJar := { r.cookieJar with cookies := some cookies } }
 
 end Request
 

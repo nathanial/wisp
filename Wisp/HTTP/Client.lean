@@ -429,6 +429,14 @@ def execute (client : Client) (req : Wisp.Request) : IO (Task (Wisp.WispResult W
     if req.verbose then
       Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.VERBOSE 1
 
+    -- Set cookie jar options
+    if let some cookieFile := req.cookieJar.cookieFile then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.COOKIEFILE cookieFile
+    if let some jarFile := req.cookieJar.cookieJarFile then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.COOKIEJAR jarFile
+    if let some cookies := req.cookieJar.cookies then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.COOKIE cookies
+
     -- Enqueue on async manager
     let manager ← getManager
     let id ← manager.nextId.atomically do
@@ -577,6 +585,14 @@ def executeStreaming (client : Client) (req : Wisp.Request) :
     -- Enable verbose if requested
     if req.verbose then
       Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.VERBOSE 1
+
+    -- Set cookie jar options
+    if let some cookieFile := req.cookieJar.cookieFile then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.COOKIEFILE cookieFile
+    if let some jarFile := req.cookieJar.cookieJarFile then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.COOKIEJAR jarFile
+    if let some cookies := req.cookieJar.cookies then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.COOKIE cookies
 
     -- Create channel for body chunks
     let channel ← Std.CloseableChannel.Sync.new

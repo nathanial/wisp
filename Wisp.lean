@@ -19,7 +19,9 @@ import Wisp.Core.Error
 import Wisp.Core.Request
 import Wisp.Core.Response
 import Wisp.Core.Streaming
+import Wisp.Core.WebSocket
 import Wisp.FFI.Easy
 import Wisp.FFI.Multi
 import Wisp.HTTP.Client
 import Wisp.HTTP.SSE
+import Wisp.HTTP.WebSocket

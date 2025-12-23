@@ -90,7 +90,22 @@ namespace CurlOpt
   def AUTH_BASIC : Int64 := 1
   def AUTH_DIGEST : Int64 := 2
   def AUTH_BEARER : Int64 := 64
+
+  -- WebSocket options (curl 7.86+)
+  def CONNECT_ONLY : UInt32 := 141
+  def WS_OPTIONS : UInt32 := 320
 end CurlOpt
+
+-- WebSocket frame type constants (curl 7.86+)
+-- These are bitmask flags from websockets.h
+namespace CurlWs
+  def TEXT : UInt32 := 1      -- 1<<0
+  def BINARY : UInt32 := 2    -- 1<<1
+  def CONT : UInt32 := 4      -- 1<<2
+  def CLOSE : UInt32 := 8     -- 1<<3
+  def PING : UInt32 := 16     -- 1<<4
+  def PONG : UInt32 := 64     -- 1<<6
+end CurlWs
 
 -- ============================================================================
 -- Curl Info Constants (CURLINFO_*)
@@ -317,5 +332,26 @@ opaque hasPendingData (easy : @& Easy) : IO Bool
 /-- Reset streaming state (read offset, headers_complete flag). -/
 @[extern "wisp_easy_reset_streaming"]
 opaque resetStreaming (easy : @& Easy) : IO Unit
+
+-- ============================================================================
+-- WebSocket Support (curl 7.86+)
+-- ============================================================================
+
+/-- Check if WebSocket support is available in the linked libcurl. -/
+@[extern "wisp_ws_check_support"]
+opaque wsCheckSupport : IO Bool
+
+/-- Send a WebSocket frame. frameType should be one of CurlWs constants. -/
+@[extern "wisp_ws_send"]
+opaque wsSend (easy : @& Easy) (data : @& ByteArray) (frameType : UInt32) : IO Unit
+
+/-- Receive a WebSocket frame. Returns None if no data available (non-blocking).
+    Returns (payload, frameType) on success. -/
+@[extern "wisp_ws_recv"]
+opaque wsRecv (easy : @& Easy) : IO (Option (ByteArray × UInt32))
+
+/-- Get WebSocket metadata (offset, bytesleft, flags) after a recv call. -/
+@[extern "wisp_ws_meta"]
+opaque wsMeta (easy : @& Easy) : IO (UInt64 × UInt64 × UInt32)
 
 end Wisp.FFI
