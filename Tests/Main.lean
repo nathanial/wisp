@@ -883,7 +883,7 @@ def main : IO UInt32 := do
   Wisp.FFI.globalInit
 
   -- Run all test suites
-  let exitCode ← runAllSuites (timeout := 15000)
+  let exitCode ← runAllSuites (timeout := 5000) (retry := 3)
 
   IO.println ""
   IO.println "========================================="
