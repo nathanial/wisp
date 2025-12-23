@@ -883,29 +883,7 @@ def main : IO UInt32 := do
   Wisp.FFI.globalInit
 
   -- Run all test suites
-  let mut exitCode : UInt32 := 0
-
-  exitCode := exitCode + (← runTests "Basic FFI" Tests.BasicFFI.cases)
-  exitCode := exitCode + (← runTests "HTTP Methods" Tests.HTTPMethods.cases)
-  exitCode := exitCode + (← runTests "Request Body Types" Tests.RequestBodies.cases)
-  exitCode := exitCode + (← runTests "Headers" Tests.Headers.cases)
-  exitCode := exitCode + (← runTests "Authentication" Tests.Authentication.cases)
-  exitCode := exitCode + (← runTests "Redirects" Tests.Redirects.cases)
-  exitCode := exitCode + (← runTests "Timeouts" Tests.Timeouts.cases)
-  exitCode := exitCode + (← runTests "HTTP Status Codes" Tests.StatusCodes.cases)
-  exitCode := exitCode + (← runTests "Response Body Parsing" Tests.ResponseParsing.cases)
-  exitCode := exitCode + (← runTests "Client Configuration" Tests.ClientConfig.cases)
-  exitCode := exitCode + (← runTests "Response Metadata" Tests.ResponseMetadata.cases)
-  exitCode := exitCode + (← runTests "Multipart Form Uploads" Tests.Multipart.cases)
-  exitCode := exitCode + (← runTests "Digest Authentication" Tests.DigestAuth.cases)
-  exitCode := exitCode + (← runTests "Connection Timeout" Tests.ConnectionTimeout.cases)
-  exitCode := exitCode + (← runTests "SSL Options" Tests.SSLOptions.cases)
-  exitCode := exitCode + (← runTests "Response Helper Functions" Tests.ResponseHelpers.cases)
-  exitCode := exitCode + (← runTests "Cookies" Tests.Cookies.cases)
-  exitCode := exitCode + (← runTests "Max Redirects Limit" Tests.MaxRedirects.cases)
-  exitCode := exitCode + (← runTests "URL Encoding Edge Cases" Tests.URLEncoding.cases)
-  exitCode := exitCode + (← runTests "Streaming Responses" Tests.Streaming.cases)
-  exitCode := exitCode + (← runTests "SSE Parser" Tests.SSEParser.cases)
+  let exitCode ← runAllSuites
 
   IO.println ""
   IO.println "========================================="
