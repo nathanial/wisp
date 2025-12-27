@@ -806,6 +806,13 @@ LEAN_EXPORT lean_obj_res wisp_multi_init(lean_obj_arg world) {
         return mk_io_error("Failed to create CURL multi handle");
     }
 
+    // Configure connection caching for better performance
+    // Increase max connections (default is 5, increase for tile loading scenarios)
+    curl_multi_setopt(handle, CURLMOPT_MAXCONNECTS, 16L);
+
+    // Enable HTTP/2 multiplexing if available
+    curl_multi_setopt(handle, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
+
     MultiWrapper* wrapper = calloc(1, sizeof(MultiWrapper));
     if (!wrapper) {
         curl_multi_cleanup(handle);
