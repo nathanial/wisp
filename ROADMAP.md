@@ -308,26 +308,9 @@ This document tracks potential improvements, new features, and cleanup opportuni
 
 ---
 
-### [Priority: Medium] Make Content-Length Calculation More Robust
+### [FIXED] Content-Length Calculation
 
-**Current State:** In `Client.lean`, content length is set using `content.length` which counts UTF-8 code points, not bytes.
-
-**Proposed Change:** Use `content.toUTF8.size` for accurate byte length:
-```lean
--- Current (line 360):
-Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE content.length.toInt64
--- Should be:
-Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE content.toUTF8.size.toInt64
-```
-
-**Benefits:**
-- Correct Content-Length for non-ASCII content
-- Prevents potential truncation issues
-
-**Affected Files:**
-- `/Users/Shared/Projects/lean-workspace/wisp/Wisp/HTTP/Client.lean` (lines 360, 364, 509, 513)
-
-**Estimated Effort:** Small
+**Fixed:** Changed `content.length` (character count) to `content.utf8ByteSize` (byte count) for POSTFIELDSIZE in `Client.lean`. This prevents request body truncation when content contains multi-byte UTF-8 characters.
 
 ---
 
