@@ -46,13 +46,12 @@ lean_lib Wisp where
   roots := #[`Wisp]
   moreLinkArgs := curlLinkArgs
 
-lean_lib Tests where
-  roots := #[`Tests]
-  moreLinkArgs := curlLinkArgs
+lean_lib WispTests where
+  roots := #[`WispTests]
 
 @[test_driver]
 lean_exe wisp_tests where
-  root := `Tests.Main
+  root := `WispTests.Main
   moreLinkArgs := curlLinkArgs
 
 lean_exe simple_get where
