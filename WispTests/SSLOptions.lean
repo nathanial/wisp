@@ -8,14 +8,14 @@ testSuite "SSL Options"
 
 test "SSL verification enabled (default)" := do
   let result ← awaitTask (client.get "https://httpbin.org/get")
-  let r ← assertOk result "SSL GET"
+  let r ← shouldBeOk result "SSL GET"
   r.status ≡ 200
 
 test "SSL insecure mode" := do
   let req := Wisp.Request.get "https://httpbin.org/get"
     |>.withInsecure
   let result ← awaitTask (client.execute req)
-  let r ← assertOk result "SSL insecure"
+  let r ← shouldBeOk result "SSL insecure"
   r.status ≡ 200
 
 #generate_tests

@@ -10,18 +10,18 @@ test "Custom user agent" := do
   let req := Wisp.Request.get "https://httpbin.org/user-agent"
     |>.withUserAgent "CustomAgent/1.0"
   let result ← awaitTask (client.execute req)
-  let r ← assertOk result "User agent"
+  let r ← shouldBeOk result "User agent"
   shouldSatisfy (r.bodyTextLossy.containsSubstr "CustomAgent/1.0") "user agent in response"
 
 test "Gzip encoding" := do
   let result ← awaitTask (client.get "https://httpbin.org/gzip")
-  let r ← assertOk result "Gzip"
+  let r ← shouldBeOk result "Gzip"
   r.status ≡ 200
   shouldSatisfy (r.bodyTextLossy.containsSubstr "gzipped") "response indicates gzipped"
 
 test "Deflate encoding" := do
   let result ← awaitTask (client.get "https://httpbin.org/deflate")
-  let r ← assertOk result "Deflate"
+  let r ← shouldBeOk result "Deflate"
   r.status ≡ 200
   shouldSatisfy (r.bodyTextLossy.containsSubstr "deflated") "response indicates deflated"
 

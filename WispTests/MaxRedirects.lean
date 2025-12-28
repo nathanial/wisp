@@ -18,7 +18,7 @@ test "Sufficient redirects allowed" := do
   let req := Wisp.Request.get "https://httpbin.org/redirect/2"
     |>.withFollowRedirects true 5
   let result ← awaitTask (client.execute req)
-  let r ← assertOk result "sufficient redirects"
+  let r ← shouldBeOk result "sufficient redirects"
   r.status ≡ 200
 
 #generate_tests

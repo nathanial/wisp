@@ -10,7 +10,7 @@ test "Request completes within timeout" := do
   let req := Wisp.Request.get "https://httpbin.org/delay/1"
     |>.withTimeout 5000
   let result ← awaitTask (client.execute req)
-  let r ← assertOk result "Timeout test"
+  let r ← shouldBeOk result "Timeout test"
   r.status ≡ 200
 
 test "Request times out" := do

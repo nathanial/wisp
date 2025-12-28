@@ -12,7 +12,7 @@ test "Form field with special chars" := do
     ("email", "john+test@example.com"),
     ("query", "a=b&c=d")
   ])
-  let r ← assertOk result "form special chars"
+  let r ← shouldBeOk result "form special chars"
   r.status ≡ 200
   shouldSatisfy (r.bodyTextLossy.containsSubstr "John") "response contains John"
   shouldSatisfy (r.bodyTextLossy.containsSubstr "example.com") "response contains example.com"
@@ -22,7 +22,7 @@ test "Form field with unicode" := do
     ("greeting", "Héllo Wörld"),
     ("emoji", "👋")
   ])
-  let r ← assertOk result "form unicode"
+  let r ← shouldBeOk result "form unicode"
   r.status ≡ 200
 
 test "Empty form field" := do
@@ -30,7 +30,7 @@ test "Empty form field" := do
     ("empty", ""),
     ("nonempty", "value")
   ])
-  let r ← assertOk result "form empty field"
+  let r ← shouldBeOk result "form empty field"
   r.status ≡ 200
   shouldSatisfy (r.bodyTextLossy.containsSubstr "nonempty") "response contains nonempty"
 
