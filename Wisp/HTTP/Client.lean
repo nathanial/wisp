@@ -357,16 +357,16 @@ def execute (client : Client) (req : Wisp.Request) : IO (Task (Wisp.WispResult W
     | .text content =>
       Wisp.FFI.slistAppend slist "Content-Type: text/plain; charset=utf-8"
       Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.POSTFIELDS content
-      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE content.length.toInt64
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE content.utf8ByteSize.toInt64
     | .json content =>
       Wisp.FFI.slistAppend slist "Content-Type: application/json; charset=utf-8"
       Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.POSTFIELDS content
-      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE content.length.toInt64
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE content.utf8ByteSize.toInt64
     | .form fields =>
       Wisp.FFI.slistAppend slist "Content-Type: application/x-www-form-urlencoded"
       let formBody ← buildFormBody easy fields
       Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.POSTFIELDS formBody
-      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE formBody.length.toInt64
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE formBody.utf8ByteSize.toInt64
     | .multipart parts =>
       let mime ← Wisp.FFI.mimeInit easy
       for p in parts do
@@ -514,16 +514,16 @@ def executeStreaming (client : Client) (req : Wisp.Request) :
     | .text content =>
       Wisp.FFI.slistAppend slist "Content-Type: text/plain; charset=utf-8"
       Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.POSTFIELDS content
-      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE content.length.toInt64
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE content.utf8ByteSize.toInt64
     | .json content =>
       Wisp.FFI.slistAppend slist "Content-Type: application/json; charset=utf-8"
       Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.POSTFIELDS content
-      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE content.length.toInt64
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE content.utf8ByteSize.toInt64
     | .form fields =>
       Wisp.FFI.slistAppend slist "Content-Type: application/x-www-form-urlencoded"
       let formBody ← buildFormBody easy fields
       Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.POSTFIELDS formBody
-      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE formBody.length.toInt64
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE formBody.utf8ByteSize.toInt64
     | .multipart parts =>
       let mime ← Wisp.FFI.mimeInit easy
       for p in parts do
