@@ -5,6 +5,7 @@ package wisp where
   precompileModules := true
 
 require crucible from ".." / "crucible"
+require staple from ".." / "staple"
 
 -- Platform-specific curl library paths
 -- On macOS, curl may be in various locations:
