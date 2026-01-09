@@ -4,7 +4,7 @@ open Lake DSL System
 package wisp where
   precompileModules := true
 
-require crucible from git "https://github.com/nathanial/crucible" @ "v0.0.3"
+require crucible from git "https://github.com/nathanial/crucible" @ "v0.0.7"
 require staple from git "https://github.com/nathanial/staple" @ "v0.0.2"
 
 -- Platform-specific curl library paths
