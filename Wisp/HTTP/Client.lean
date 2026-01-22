@@ -32,6 +32,10 @@ structure Client where
   verifySsl : Bool := true
   deriving Repr, Inhabited
 
+/-- Handle to cancel an in-flight request. -/
+structure CancelHandle where
+  cancel : IO Unit
+
 namespace Client
 
 /-- Create a new HTTP client with default settings -/
@@ -120,6 +124,7 @@ private inductive Pending where
 
 private inductive Command where
   | add (id : UInt64) (pending : Pending)
+  | cancel (id : UInt64)
 
 private def curlErrorFromCode (code : UInt32) : Wisp.WispError :=
   match Wisp.CurlCode.fromNat code.toNat with
@@ -199,6 +204,25 @@ private def handleCommand
   | .add id p =>
     Wisp.FFI.multiAddHandle multi (getEasyHandle p)
     return pending.insert id p
+  | .cancel id =>
+    match pending.get? id with
+    | none => return pending
+    | some p =>
+        match p with
+        | .buffered bp =>
+            try
+              bp.promise.resolve (.error (.ioError "canceled"))
+            catch _ =>
+              pure ()
+            Wisp.FFI.multiRemoveHandle multi bp.easy
+        | .streaming sp =>
+            try
+              let _ ← Std.CloseableChannel.Sync.close sp.channel
+              sp.promise.resolve (.error (.ioError "canceled"))
+            catch _ =>
+              pure ()
+            Wisp.FFI.multiRemoveHandle multi sp.easy
+        return pending.erase id
 
 private def drainCommands
     (multi : Wisp.FFI.Multi)
@@ -455,6 +479,158 @@ def execute (client : Client) (req : Wisp.Request) : IO (Task (Wisp.WispResult W
     promise.resolve (.error (.ioError (toString e)))
     return promise.result!
 
+/-- Execute a request asynchronously and return a task plus a cancellation handle. -/
+def executeCancelable (client : Client) (req : Wisp.Request)
+    : IO (Task (Wisp.WispResult Wisp.Response) × CancelHandle) := do
+  try
+    -- Initialize easy handle
+    let easy ← Wisp.FFI.easyInit
+
+    -- Setup response callbacks
+    Wisp.FFI.setupWriteCallback easy
+    Wisp.FFI.setupHeaderCallback easy
+
+    -- Set URL
+    Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.URL req.url
+
+    -- Set method
+    let customMethod : Option String :=
+      match req.method with
+      | .PUT => some "PUT"
+      | .DELETE => some "DELETE"
+      | .PATCH => some "PATCH"
+      | .OPTIONS => some "OPTIONS"
+      | .TRACE => some "TRACE"
+      | .CONNECT => some "CONNECT"
+      | _ => none
+
+    match req.method with
+    | .GET => Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.HTTPGET 1
+    | .POST => Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POST 1
+    | .HEAD => Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.NOBODY 1
+    | _ => pure ()
+
+    -- Build headers slist
+    let slist ← Wisp.FFI.slistNew
+
+    -- Add user headers
+    for (key, value) in req.headers do
+      Wisp.FFI.slistAppend slist s!"{key}: {value}"
+
+    -- Set body based on type
+    match req.body with
+    | .empty => pure ()
+    | .raw data contentType =>
+      Wisp.FFI.slistAppend slist s!"Content-Type: {contentType}"
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.POSTFIELDS (String.fromUTF8! data)
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE data.size.toInt64
+    | .text content =>
+      Wisp.FFI.slistAppend slist "Content-Type: text/plain; charset=utf-8"
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.POSTFIELDS content
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE content.utf8ByteSize.toInt64
+    | .json content =>
+      Wisp.FFI.slistAppend slist "Content-Type: application/json; charset=utf-8"
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.POSTFIELDS content
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE content.utf8ByteSize.toInt64
+    | .form fields =>
+      Wisp.FFI.slistAppend slist "Content-Type: application/x-www-form-urlencoded"
+      let formBody ← buildFormBody easy fields
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.POSTFIELDS formBody
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.POSTFIELDSIZE formBody.utf8ByteSize.toInt64
+    | .multipart parts =>
+      let mime ← Wisp.FFI.mimeInit easy
+      for p in parts do
+        let mimepart ← Wisp.FFI.mimeAddpart mime
+        Wisp.FFI.mimepartName mimepart p.name
+        Wisp.FFI.mimepartData mimepart p.data
+        if let some filename := p.filename then
+          Wisp.FFI.mimepartFilename mimepart filename
+        if let some ct := p.contentType then
+          Wisp.FFI.mimepartType mimepart ct
+      Wisp.FFI.setoptMime easy mime
+
+    -- Set authentication
+    match req.auth with
+    | .none => pure ()
+    | .basic username password =>
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.USERPWD s!"{username}:{password}"
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.HTTPAUTH Wisp.FFI.CurlOpt.AUTH_BASIC
+    | .bearer token =>
+      Wisp.FFI.slistAppend slist s!"Authorization: Bearer {token}"
+    | .digest username password =>
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.USERPWD s!"{username}:{password}"
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.HTTPAUTH Wisp.FFI.CurlOpt.AUTH_DIGEST
+
+    -- Re-apply custom method after setting body/options that may override it
+    if let some method := customMethod then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.CUSTOMREQUEST method
+
+    -- Apply headers
+    Wisp.FFI.setoptSlist easy Wisp.FFI.CurlOpt.HTTPHEADER slist
+
+    -- Set timeouts
+    let timeout := if req.timeoutMs > 0 then req.timeoutMs else client.defaultTimeout
+    let connectTimeout := if req.connectTimeoutMs > 0 then req.connectTimeoutMs else client.defaultConnectTimeout
+    Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.TIMEOUT_MS timeout.toInt64
+    Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.CONNECTTIMEOUT_MS connectTimeout.toInt64
+
+    -- Set redirect behavior
+    Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.FOLLOWLOCATION (if req.followRedirects then 1 else 0)
+    Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.MAXREDIRS req.maxRedirects.toNat.toInt64
+
+    -- Set SSL options
+    Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.SSL_VERIFYPEER (if req.ssl.verifyPeer then 1 else 0)
+    Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.SSL_VERIFYHOST (if req.ssl.verifyHost then 2 else 0)
+    if let some caPath := req.ssl.caCertPath then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.CAINFO caPath
+    if let some certPath := req.ssl.clientCertPath then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.SSLCERT certPath
+    if let some keyPath := req.ssl.clientKeyPath then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.SSLKEY keyPath
+
+    -- Set user agent
+    Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.USERAGENT req.userAgent
+
+    -- Set accept encoding
+    if let some enc := req.acceptEncoding then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.ACCEPT_ENCODING enc
+
+    -- Enable verbose if requested
+    if req.verbose then
+      Wisp.FFI.setoptLong easy Wisp.FFI.CurlOpt.VERBOSE 1
+
+    -- Set cookie jar options
+    if let some cookieFile := req.cookieJar.cookieFile then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.COOKIEFILE cookieFile
+    if let some jarFile := req.cookieJar.cookieJarFile then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.COOKIEJAR jarFile
+    if let some cookies := req.cookieJar.cookies then
+      Wisp.FFI.setoptString easy Wisp.FFI.CurlOpt.COOKIE cookies
+
+    -- Enqueue on async manager
+    let manager ← getManager
+    let id ← manager.nextId.atomically do
+      let current ← get
+      set (current + 1)
+      return current
+    Wisp.FFI.setoptPrivate easy id
+
+    let promise ← IO.Promise.new
+    let pending : Pending := .buffered { easy, promise }
+    let _ ← Std.CloseableChannel.Sync.send manager.chan (.add id pending)
+    let cancelHandle : CancelHandle := {
+      cancel := do
+        let _ ← Std.CloseableChannel.Sync.send manager.chan (.cancel id)
+        pure ()
+    }
+
+    return (promise.result!, cancelHandle)
+  catch e =>
+    let promise ← IO.Promise.new
+    promise.resolve (.error (.ioError (toString e)))
+    let cancelHandle : CancelHandle := { cancel := pure () }
+    return (promise.result!, cancelHandle)
+
 /-- Execute a request synchronously by awaiting the task. -/
 def executeSync (client : Client) (req : Wisp.Request) : IO (Wisp.WispResult Wisp.Response) := do
   let task ← client.execute req
@@ -621,6 +797,11 @@ def executeStreaming (client : Client) (req : Wisp.Request) :
 /-- Simple GET request -/
 def get (client : Client) (url : String) : IO (Task (Wisp.WispResult Wisp.Response)) :=
   client.execute (Wisp.Request.get url)
+
+/-- Simple GET request with cancellation handle. -/
+def getCancelable (client : Client) (url : String)
+    : IO (Task (Wisp.WispResult Wisp.Response) × CancelHandle) :=
+  client.executeCancelable (Wisp.Request.get url)
 
 /-- Simple POST request with JSON body -/
 def postJson (client : Client) (url : String) (json : String) : IO (Task (Wisp.WispResult Wisp.Response)) :=
