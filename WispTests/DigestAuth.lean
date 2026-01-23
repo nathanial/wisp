@@ -20,6 +20,6 @@ test "Digest auth (invalid)" := do
   let r ← shouldBeOk result "digest auth invalid"
   r.status ≡ 401
 
-#generate_tests
+
 
 end WispTests.DigestAuth

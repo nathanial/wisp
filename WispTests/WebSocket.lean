@@ -48,6 +48,6 @@ test "WebSocket invalid URL rejected" := do
     shouldSatisfy true "invalid URL rejected"
   | .ok _ => throw (IO.userError "Expected error for http:// URL")
 
-#generate_tests
+
 
 end WispTests.WebSocket

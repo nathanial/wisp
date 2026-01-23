@@ -21,6 +21,6 @@ test "Sufficient redirects allowed" := do
   let r ← shouldBeOk result "sufficient redirects"
   r.status ≡ 200
 
-#generate_tests
+
 
 end WispTests.MaxRedirects

@@ -66,6 +66,6 @@ test "503 Service Unavailable" := do
   r.status ≡ 503
   shouldSatisfy r.isServerError "isServerError"
 
-#generate_tests
+
 
 end WispTests.StatusCodes

@@ -28,6 +28,6 @@ test "statusText for known codes" := do
   let r ← shouldBeOk result "statusText check"
   r.statusText ≡ "Not Found"
 
-#generate_tests
+
 
 end WispTests.ResponseHelpers

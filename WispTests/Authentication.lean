@@ -28,6 +28,6 @@ test "Bearer token" := do
   r.status ≡ 200
   shouldSatisfy (r.bodyTextLossy.containsSubstr "my-secret-token") "response contains token"
 
-#generate_tests
+
 
 end WispTests.Authentication

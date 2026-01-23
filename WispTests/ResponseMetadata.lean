@@ -16,6 +16,6 @@ test "Effective URL tracked" := do
   let r ← shouldBeOk result "GET redirect"
   shouldSatisfy (r.effectiveUrl.containsSubstr "httpbin.org") "effectiveUrl contains httpbin.org"
 
-#generate_tests
+
 
 end WispTests.ResponseMetadata

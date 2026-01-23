@@ -10,6 +10,6 @@ test "Version info" := do
   let version ← Wisp.FFI.versionInfo
   shouldSatisfy (version.containsSubstr "libcurl") "version contains libcurl"
 
-#generate_tests
+
 
 end WispTests.BasicFFI

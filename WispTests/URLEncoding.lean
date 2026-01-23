@@ -34,6 +34,6 @@ test "Empty form field" := do
   r.status ≡ 200
   shouldSatisfy (r.bodyTextLossy.containsSubstr "nonempty") "response contains nonempty"
 
-#generate_tests
+
 
 end WispTests.URLEncoding

@@ -18,6 +18,6 @@ test "SSL insecure mode" := do
   let r ← shouldBeOk result "SSL insecure"
   r.status ≡ 200
 
-#generate_tests
+
 
 end WispTests.SSLOptions

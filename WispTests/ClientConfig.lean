@@ -25,6 +25,6 @@ test "Deflate encoding" := do
   r.status ≡ 200
   shouldSatisfy (r.bodyTextLossy.containsSubstr "deflated") "response indicates deflated"
 
-#generate_tests
+
 
 end WispTests.ClientConfig

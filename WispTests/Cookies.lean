@@ -39,6 +39,6 @@ test "Inline cookie string with withCookies" := do
   shouldSatisfy (r.bodyTextLossy.containsSubstr "inlinecookie") "response contains inlinecookie"
   shouldSatisfy (r.bodyTextLossy.containsSubstr "inlinevalue") "response contains inlinevalue"
 
-#generate_tests
+
 
 end WispTests.Cookies

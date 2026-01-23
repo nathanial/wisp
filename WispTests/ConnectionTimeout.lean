@@ -13,6 +13,6 @@ test "Connection timeout setting" := do
   let r ← shouldBeOk result "connection timeout"
   r.status ≡ 200
 
-#generate_tests
+
 
 end WispTests.ConnectionTimeout

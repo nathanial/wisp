@@ -141,6 +141,6 @@ test "SSE lastEventId tracking" := do
   let lastId ← stream.getLastEventId
   lastId ≡ some "evt-002"
 
-#generate_tests
+
 
 end WispTests.SSEParser

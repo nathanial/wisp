@@ -26,6 +26,6 @@ test "Content-Type header" := do
   shouldSatisfy r.contentType.isSome "Content-Type header present"
   shouldSatisfy ((r.contentType.getD "").containsSubstr "json") "Content-Type contains json"
 
-#generate_tests
+
 
 end WispTests.Headers

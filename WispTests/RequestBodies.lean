@@ -33,6 +33,6 @@ test "Raw bytes body" := do
   let r ← shouldBeOk result "Raw POST"
   r.status ≡ 200
 
-#generate_tests
+
 
 end WispTests.RequestBodies

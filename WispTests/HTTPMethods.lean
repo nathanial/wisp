@@ -51,6 +51,6 @@ test "OPTIONS request" := do
   let r ← shouldBeOk result "OPTIONS"
   r.status ≡ 200
 
-#generate_tests
+
 
 end WispTests.HTTPMethods

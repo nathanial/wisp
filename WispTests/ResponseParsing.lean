@@ -23,6 +23,6 @@ test "Body size tracking" := do
   let r ← shouldBeOk result "Body size"
   r.body.size ≡ 256
 
-#generate_tests
+
 
 end WispTests.ResponseParsing

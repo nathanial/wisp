@@ -24,6 +24,6 @@ test "Absolute redirect" := do
   let r ← shouldBeOk result "Absolute redirect"
   r.status ≡ 200
 
-#generate_tests
+
 
 end WispTests.Redirects

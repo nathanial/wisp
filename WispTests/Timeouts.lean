@@ -21,6 +21,6 @@ test "Request times out" := do
   | .ok _ => throw (IO.userError "Expected timeout but request succeeded")
   | .error _ => pure ()  -- Timeout is expected
 
-#generate_tests
+
 
 end WispTests.Timeouts

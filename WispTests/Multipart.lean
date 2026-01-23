@@ -39,6 +39,6 @@ test "Multipart with content type" := do
   r.status ≡ 200
   shouldSatisfy (r.bodyTextLossy.containsSubstr "jsondata") "response contains jsondata"
 
-#generate_tests
+
 
 end WispTests.Multipart

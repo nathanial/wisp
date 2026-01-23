@@ -58,6 +58,6 @@ test "Streaming read body as text" := do
   | some text => shouldSatisfy (text.containsSubstr "slideshow") "body contains slideshow"
   | none => throw (IO.userError "Expected text body")
 
-#generate_tests
+
 
 end WispTests.Streaming
